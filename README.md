@@ -118,27 +118,6 @@ Key arguments:
 - `--cache_logits` — cache logits to disk for reuse across runs (default: true)
 - `--resume` — skip completed source position files
 
-### Patch grid (all samples, fixed layer/position)
-
-Runs patching across all samples in the dataset for a specific layer and position configuration. Use this when you have identified a layer/position of interest from the sweep or PE analysis and want to evaluate it across the full dataset.
-
-```bash
-python -m ri.entry_points.run_patch_grid \
-    --source_dataset outputs/single_batch_output_cot.json \
-    --target_dataset outputs/single_batch_output_non_cot.json \
-    --model_name meta-llama/Llama-3.1-8B-Instruct \
-    --layers 31 \
-    --target_layer 15 \
-    --patch_from_generation \
-    --output_dir patch_grid_results
-```
-
-Key arguments:
-- `--layers` — maximum layer index to sweep (inclusive)
-- `--target_layer` — only patch into this specific target layer
-- `--same_layer_patch` — use the same layer for source and target
-- `--batch_size` — number of samples per batch (default: 20)
-
 ### CLI for standalone experiments
 
 The `ri` CLI provides subcommands for generation, patching, and causal mediation analysis without needing the full sweep scripts.

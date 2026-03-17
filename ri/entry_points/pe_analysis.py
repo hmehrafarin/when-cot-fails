@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 import os
-from typing import Any, Dict, List, Literal, Optional
+from typing import Any, Dict, List, Optional
 
 import fire
 import torch
@@ -23,7 +23,6 @@ from ri.patching.pipeline import _safe_token_from_id
 from ri.patching.tensor_ops import left_pad_offsets
 from ri.utils import (
     decode_tokens,
-    extract_answer,
     extract_answer_from_generation,
     get_eos_token_ids,
     get_pad_id,
@@ -126,7 +125,6 @@ def _is_complete_source_result_file(
     file_path: str,
     sample_idx: int,
     source_position: int,
-    expected_track_source: str,
     expected_num_layers: int,
     expected_target_positions: List[int],
 ) -> bool:
@@ -145,9 +143,6 @@ def _is_complete_source_result_file(
         return False
     if payload.get("source_position") != source_position:
         return False
-    if payload.get("track_source") != expected_track_source:
-        return False
-
     layer_results = payload.get("layer_results")
     if not isinstance(layer_results, dict):
         return False
@@ -206,14 +201,6 @@ class PatchEffectAnalyzer(CausalMediationRunner):
         target_model_name: Optional[str] = None,
         max_gen_len: int = 400,
         start_src_pos: Optional[int] = 0,
-        track_source: Literal[
-            "gold",
-            "source_final_answer",
-            "source_first_token",
-            "source_patch_token",
-            "custom_token",
-        ] = "source_first_token",
-        track_source_token: Optional[str] = None,
         cache_logits: bool = True,
         logit_cache_dir: Optional[str] = None,
         target_positions: Optional[str] = None,
@@ -236,23 +223,7 @@ class PatchEffectAnalyzer(CausalMediationRunner):
             gold_step=gold_step,
             target_model_name=target_model_name,
         )
-        if track_source == "custom_token":
-            if track_source_token is None:
-                raise ValueError(
-                    "track_source='custom_token' requires track_source_token."
-                )
-            track_source_token = str(track_source_token).strip()
-            if not track_source_token:
-                raise ValueError(
-                    "track_source_token resolves to an empty string."
-                )
-        elif track_source_token is not None:
-            raise ValueError(
-                "track_source_token is only valid when track_source='custom_token'."
-            )
         self.start_src_pos = start_src_pos
-        self.track_source = track_source
-        self.track_source_token = track_source_token
         self.target_positions = _parse_target_positions_arg(target_positions)
         self.resume = resume
 
@@ -384,69 +355,6 @@ class PatchEffectAnalyzer(CausalMediationRunner):
             source_cot = source_cot[0] if source_cot else ""
         source_cot = str(source_cot or "").strip()
 
-        def _source_first_token_tracking() -> tuple[Optional[str], List[int]]:
-            source_cot_tokens = target_tokenizer.encode(
-                source_cot, add_special_tokens=False)
-            source_first_token_id = (
-                source_cot_tokens[0] if source_cot_tokens else None)
-            tracked_first_token_str = (
-                _safe_token_from_id(target_tokenizer, source_first_token_id)
-                if source_first_token_id is not None else None
-            )
-            tracked_first_token_ids = (
-                [source_first_token_id]
-                if source_first_token_id is not None else []
-            )
-            return tracked_first_token_str, tracked_first_token_ids
-
-        effective_track_source = self.track_source
-
-        # Determine tracked token IDs based on tracking mode
-        if self.track_source == "custom_token":
-            tracked_token_str = str(self.track_source_token).strip()
-            tracked_token_ids = target_tokenizer.encode(
-                tracked_token_str, add_special_tokens=False)
-        elif self.track_source == "gold":
-            gold_answer = batched_input_tgt[0].get("answer", "")
-            gold_numeric = extract_answer([gold_answer])
-            tracked_token_str = str(
-                gold_numeric[0]).strip() if gold_numeric else ""
-            tracked_token_ids = target_tokenizer.encode(
-                tracked_token_str, add_special_tokens=False)
-        elif self.track_source == "source_final_answer":
-            source_final_answer_extracted = extract_answer_from_generation(
-                [source_cot],
-                tokenizer=target_tokenizer,
-                template_name=getattr(
-                    self.src_prompter, "template_name", "unknown"),
-            )
-            source_final_answer_num = (
-                source_final_answer_extracted["answer_num"][0]
-                if source_final_answer_extracted.get("answer_num") else None
-            )
-            if source_final_answer_num is None:
-                tracked_token_str, tracked_token_ids = _source_first_token_tracking()
-                if not tracked_token_ids:
-                    raise ValueError(
-                        f"track_source='source_final_answer' but source final answer and fallback first token do not exist "
-                        f"for sample {sample_idx}. Source CoT: {source_cot[:200]}..."
-                    )
-                effective_track_source = "source_final_answer_fallback_source_first_token"
-                print(
-                    f"Warning: source final answer not found for sample {sample_idx}; "
-                    "falling back to source_first_token tracking."
-                )
-            else:
-                tracked_token_str = str(source_final_answer_num).strip()
-                tracked_token_ids = target_tokenizer.encode(
-                    tracked_token_str, add_special_tokens=False)
-        elif self.track_source == "source_first_token":
-            tracked_token_str, tracked_token_ids = _source_first_token_tracking()
-        else:  # source_patch_token
-            # Determined dynamically per source position in the loop
-            tracked_token_ids = []
-            tracked_token_str = None
-
         # Get target baseline generation and answer
         target_pad_id = get_pad_id(target_tokenizer)
         target_eos_ids = get_eos_token_ids(target_tokenizer)
@@ -483,11 +391,6 @@ class PatchEffectAnalyzer(CausalMediationRunner):
                 **tokenized_tgt, output_hidden_states=False)
         baseline_logits = baseline_output.logits
 
-        if self.track_source != "source_patch_token":
-            before_patch_tracked_prob = compute_probs_batched(
-                baseline_logits, tracked_token_ids).item()
-        else:
-            before_patch_tracked_prob = None  # Computed per src_pos
         before_patch_target_prob = compute_probs_batched(
             baseline_logits, target_answer_token_ids).item()
 
@@ -510,13 +413,8 @@ class PatchEffectAnalyzer(CausalMediationRunner):
         # Common metadata for all source position files
         common_metadata = {
             "sample_idx": sample_idx,
-            "track_source": self.track_source,
-            "effective_track_source": effective_track_source,
-            "track_source_token": self.track_source_token,
             "target_positions_requested": self.target_positions,
             "target_positions_resolved": target_positions,
-            "tracked_token_str": tracked_token_str,
-            "before_patch_tracked_prob": before_patch_tracked_prob,
             "before_patch_target_prob": before_patch_target_prob,
             "source_generated_answer_cot": source_cot,
         }
@@ -553,7 +451,6 @@ class PatchEffectAnalyzer(CausalMediationRunner):
                     file_path=output_file,
                     sample_idx=sample_idx,
                     source_position=src_pos,
-                    expected_track_source=self.track_source,
                     expected_num_layers=num_layers,
                     expected_target_positions=target_positions,
                 ):
@@ -568,13 +465,6 @@ class PatchEffectAnalyzer(CausalMediationRunner):
             patched_token_id = generated_ids[0, src_pos].item()
             patched_token_str = _safe_token_from_id(
                 source_tokenizer, patched_token_id)
-
-            # For source_patch_token mode, set tracked token to the patched token
-            if self.track_source == "source_patch_token":
-                tracked_token_ids = [patched_token_id]
-                tracked_token_str = patched_token_str
-                before_patch_tracked_prob = compute_probs_batched(
-                    baseline_logits, tracked_token_ids).item()
 
             # Try to load cached logits for this source position
             cached_logits = None
@@ -631,8 +521,6 @@ class PatchEffectAnalyzer(CausalMediationRunner):
                         if logits_to_cache is not None:
                             logits_to_cache[layer_idx, tgt_idx] = logits[0, -1].cpu()
 
-                    after_patch_tracked_prob = compute_probs_batched(
-                        logits, tracked_token_ids).item()
                     after_patch_target_prob = compute_probs_batched(
                         logits, target_answer_token_ids).item()
 
@@ -640,7 +528,6 @@ class PatchEffectAnalyzer(CausalMediationRunner):
 
                     layer_pos_results.append({
                         "target_position": tgt_pos,
-                        "after_patch_tracked_prob": after_patch_tracked_prob,
                         "after_patch_target_prob": after_patch_target_prob,
                         "patch_effect": pe,
                     })
@@ -664,10 +551,6 @@ class PatchEffectAnalyzer(CausalMediationRunner):
                 **common_metadata,
                 "source_position": src_pos,
                 "patched_token_str": patched_token_str,
-                # Overrides common_metadata for source_patch_token
-                "tracked_token_str": tracked_token_str,
-                # Overrides for source_patch_token
-                "before_patch_tracked_prob": before_patch_tracked_prob,
                 "layer_results": layer_results,
             }
             _write_json_atomic(output_file, result)
@@ -722,14 +605,6 @@ def main(
     output_dir: str = "pe_output",
     sample_idx: int = 0,
     start_src_pos: Optional[int] = 0,
-    track_source: Literal[
-        "gold",
-        "source_final_answer",
-        "source_first_token",
-        "source_patch_token",
-        "custom_token",
-    ] = "source_first_token",
-    track_source_token: Optional[str] = None,
     seed: int = 42,
     max_gen_len: int = 400,
     cache_logits: bool = True,
@@ -756,15 +631,6 @@ def main(
         Index of the sample to analyze.
     start_src_pos : int | None
         Starting source position for analysis.
-    track_source : Literal["gold", "source_final_answer", "source_first_token", "source_patch_token", "custom_token"]
-        Which token to track for patch effect calculation:
-        - "gold": Track probability of gold answer tokens
-        - "source_final_answer": Track probability of source's final numeric answer
-        - "source_first_token": Track probability of first token of source CoT (default)
-        - "source_patch_token": Track probability of the token being patched at each source position
-        - "custom_token": Track probability of a user-specified token string
-    track_source_token : str | None
-        Token string to track when track_source="custom_token" (e.g., "120").
     seed : int
         Random seed.
     max_gen_len : int
@@ -789,8 +655,6 @@ def main(
         seed=seed,
         max_gen_len=max_gen_len,
         start_src_pos=start_src_pos,
-        track_source=track_source,
-        track_source_token=track_source_token,
         cache_logits=cache_logits,
         logit_cache_dir=logit_cache_dir,
         target_positions=target_positions,

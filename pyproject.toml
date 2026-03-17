@@ -1,0 +1,43 @@
+[build-system]
+requires = ["setuptools>=64", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "reasoning-interpretability"
+version = "0.2.0"
+description = "Toolkit for prompt construction and patching for reasoning models"
+readme = "README.md"
+requires-python = ">=3.9"
+authors = [{ name = "h mehrafarin" }]
+license = { text = "MIT" }
+dependencies = [
+  "transformers>=4.41",
+  "accelerate",
+  "bitsandbytes",
+  "datasets",
+  "pandas",
+  "numpy",
+  "torch",
+  "fire",
+  "hf-transfer"
+]
+
+[project.scripts]
+ri = "ri.cli:cli"
+ri-wrong-preds = "ri.entry_points.get_wrong_predictions:main"
+ri-patch-grid = "ri.entry_points.run_patch_grid:run"
+
+[tool.setuptools]
+include-package-data = true
+
+[tool.setuptools.packages.find]
+include = ["ri", "ri.*"]
+
+[tool.setuptools.package-data]
+"*" = ["*.json"]
+
+[project.optional-dependencies]
+test = ["pytest>=7", "pytest-cov"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

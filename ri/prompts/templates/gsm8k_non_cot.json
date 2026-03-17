@@ -1,0 +1,8 @@
+{   
+    "start_of_context": "[CONTEXT_START]:\n",
+    "context": "Question: {question}\nAnswer: {answer}\n",
+    "end_of_context": "[CONTEXT_END]\n",
+    "query": "Question: {question}\nAnswer: {answer}",
+    "response_split": "####",
+    "system": "Answer only with the final numeric result. Do not show steps."
+}

@@ -136,7 +136,6 @@ python -m ri.entry_points.run_patch_grid \
 Key arguments:
 - `--layers` — maximum layer index to sweep (inclusive)
 - `--target_layer` — only patch into this specific target layer
-- `--patching_k_values` — values of patching_k to sweep (default: `(1,)`)
 - `--same_layer_patch` — use the same layer for source and target
 - `--batch_size` — number of samples per batch (default: 20)
 

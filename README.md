@@ -106,13 +106,10 @@ python -m ri.entry_points.pe_analysis \
     --target_dataset ri/single_batch_output_cot.json \
     --source_model_name meta-llama/Llama-3.1-8B-Instruct \
     --sample_idx 0 \
-    --output_dir pe_output \
-    --track_source source_first_token
+    --output_dir pe_output
 ```
 
 Key arguments:
-- `--track_source` — which token probability to track: `gold`, `source_final_answer`, `source_first_token`, `source_patch_token`, or `custom_token`
-- `--track_source_token` — token string when using `custom_token` mode
 - `--start_src_pos` — starting source position (supports negative indexing)
 - `--target_positions` — comma-separated target positions (e.g. `"0,-1"`)
 - `--cache_logits` — cache logits to disk for reuse across runs (default: true)

@@ -587,7 +587,7 @@ class PatchEffectAnalyzer(CausalMediationRunner):
         print(f"Results saved to {output_folder}")
 
 
-def main(
+def run_pe_analysis(
     source_model_name: str = "meta-llama/Llama-3.1-8B-Instruct",
     target_model_name: str | None = None,
     source_dataset: str = "outputs/single_batch_output_cot.json",
@@ -601,7 +601,7 @@ def main(
     logit_cache_dir: str | None = None,
     target_positions: str | None = None,
     resume: bool = False,
-):
+) -> None:
     """
     Run patch effect analysis across layers and target positions.
 
@@ -658,4 +658,4 @@ def main(
 
 
 if __name__ == "__main__":
-    fire.Fire(main)
+    fire.Fire(run_pe_analysis)

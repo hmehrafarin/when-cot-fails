@@ -173,24 +173,45 @@ def main():
         help="Skip completed output files and only compute missing/incomplete ones.",
     )
     args = parser.parse_args()
+    run(
+        sample_idx=args.sample_idx,
+        layer=args.layer,
+        start_layer=args.start_layer,
+        layer_stride=args.layer_stride,
+        include_final_layer=args.include_final_layer,
+        target_pos=args.target_pos,
+        target_positions=_parse_target_positions_arg(args.target_positions),
+        output_dir=args.output_dir,
+        patch_from_generation=args.patch_from_generation,
+        source_dataset=args.source_dataset,
+        target_dataset=args.target_dataset,
+        source_model_name=args.source_model_name,
+        target_model_name=args.target_model_name,
+        src_prompt_template=args.src_prompt_template,
+        tgt_prompt_template=args.tgt_prompt_template,
+        resume=args.resume,
+    )
 
-    sample_idx = args.sample_idx
-    layer = args.layer
-    start_layer = args.start_layer
-    layer_stride = args.layer_stride
-    include_final_layer = args.include_final_layer
-    target_pos = args.target_pos
-    target_positions = _parse_target_positions_arg(args.target_positions)
-    output_dir = args.output_dir
-    patch_from_generation = args.patch_from_generation
-    source_dataset = args.source_dataset
-    target_dataset = args.target_dataset
-    source_model_name = args.source_model_name
-    target_model_name = args.target_model_name
-    src_prompt_template = args.src_prompt_template
-    tgt_prompt_template = args.tgt_prompt_template
-    resume = args.resume
 
+def run(
+    *,
+    sample_idx: int = 0,
+    layer: int | None = None,
+    start_layer: int = 0,
+    layer_stride: int = 1,
+    include_final_layer: bool = False,
+    target_pos: int | None = None,
+    target_positions: list[int] | None = None,
+    output_dir: str = "patch_pos_sweep_results",
+    patch_from_generation: bool = False,
+    source_dataset: str = "outputs/single_batch_output_cot.json",
+    target_dataset: str = "outputs/single_batch_output_non_cot.json",
+    source_model_name: str = "meta-llama/Llama-3.1-8B-Instruct",
+    target_model_name: str | None = None,
+    src_prompt_template: str = "gsm8k_cot",
+    tgt_prompt_template: str = "gsm8k_non_cot",
+    resume: bool = False,
+) -> None:
     if target_positions is not None and target_pos is not None:
         raise ValueError("Provide either --target_pos or --target_positions, not both.")
     if layer is None and layer_stride <= 0:

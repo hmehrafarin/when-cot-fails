@@ -81,6 +81,8 @@ ignore = [
 
 [tool.ruff.lint.per-file-ignores]
 "tests/**" = ["PLR2004", "S101"]
+# Hydra dispatcher uses lazy imports per task branch to keep startup fast.
+"ri/main.py" = ["PLC0415"]
 
 [tool.ruff.lint.pylint]
 max-branches = 35
@@ -112,7 +114,4 @@ DEP002 = [
   "hf-transfer",
   "pytest",
   "pytest-cov",
-  # Used via Hydra composition (no direct Python import in user code).
-  "hydra-core",
-  "omegaconf",
 ]

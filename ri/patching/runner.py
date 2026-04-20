@@ -1,16 +1,17 @@
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional, Union
 import math
+from typing import Any
 
 import pandas as pd
 from tqdm import tqdm
 
+from ri.common import choose_torch_dtype, get_dataset, prepare_batch_data, set_random_seed
 from ri.config.settings import Constants
 from ri.core.model import ModelAndTokenizer
 from ri.prompts.prompter import Prompter
-from ri.common import choose_torch_dtype, get_dataset, prepare_batch_data, set_random_seed
 from ri.utils.extraction import extract_answer
+
 from .config import HSSelectionMode, PatchConfig, StepsType
 from .pipeline import patch_and_generate
 
@@ -30,18 +31,20 @@ class PatchRunner:
         patch_config: PatchConfig,
         seed: int,
         gold_step: bool,
-        target_model_name: Optional[str] = None,
+        target_model_name: str | None = None,
         cache_dir: str = Constants.HUGGINGFACE_CACHE_DIR,
     ):
         set_random_seed(seed, deterministic=True)
 
         source_ds = get_dataset(source_dataset)
-        self.source_data = source_ds["train"] if source_dataset.endswith(
-            ".json") else source_ds["test"]
+        self.source_data = (
+            source_ds["train"] if source_dataset.endswith(".json") else source_ds["test"]
+        )
 
         target_ds = get_dataset(target_dataset)
-        self.target_data = target_ds["train"] if target_dataset.endswith(
-            ".json") else target_ds["test"]
+        self.target_data = (
+            target_ds["train"] if target_dataset.endswith(".json") else target_ds["test"]
+        )
 
         self.batch_size = batch_size
         self.patch_config = patch_config
@@ -79,22 +82,22 @@ class PatchRunner:
         self.tgt_prompter = Prompter(template_name=tgt_prompt_template)
 
     @staticmethod
-    def _count_answer_steps(answer: Optional[str]) -> int:
+    def _count_answer_steps(answer: str | None) -> int:
         if not answer:
             return 0
         return sum(1 for line in str(answer).split("\n") if line.strip())
 
     @staticmethod
-    def _extract_answer(row: Any) -> Optional[str]:
+    def _extract_answer(row: Any) -> str | None:
         if isinstance(row, dict):
             return row.get("answer")
         try:
-            return row["answer"]  # type: ignore[index]
+            return row["answer"]
         except (TypeError, KeyError):
             return getattr(row, "answer", None)
 
     @staticmethod
-    def _select_rows(data: Any, indices: List[int]):
+    def _select_rows(data: Any, indices: list[int]):
         if hasattr(data, "select"):
             return data.select(indices)
         return [data[i] for i in indices]
@@ -112,7 +115,7 @@ class PatchRunner:
             tgt_required = max(steps - 1, 1)
 
         max_len = min(len(self.source_data), len(self.target_data))
-        keep_indices: List[int] = []
+        keep_indices: list[int] = []
 
         for idx in range(max_len):
             src_answer = self._extract_answer(self.source_data[idx])
@@ -132,9 +135,9 @@ class PatchRunner:
         self.source_data = self._select_rows(self.source_data, keep_indices)
         self.target_data = self._select_rows(self.target_data, keep_indices)
 
-    def _run_single_batch(self, batch_idx: int) -> Dict[str, list]:
+    def _run_single_batch(self, batch_idx: int) -> dict[str, list]:
         #!TODO: refactor to drop the token importance, we will remove it in the next update
-        q, a, batched_input_source = prepare_batch_data(
+        _q, a, batched_input_source = prepare_batch_data(
             self.source_data,
             batch_idx,
             self.batch_size,
@@ -150,7 +153,7 @@ class PatchRunner:
             tokenizer=self.target_mt.tokenizer,
         )
 
-        numeric_answers_source = extract_answer(a)
+        extract_answer(a)
         numeric_answers = extract_answer(a_tgt)
 
         gen = patch_and_generate(
@@ -169,10 +172,8 @@ class PatchRunner:
         # Convert token lists to text for presentation
         source_tokens = gen.get("source_selected_tokens", [])
         target_tokens = gen.get("target_patch_token", [])
-        patch_from_text = [" ".join(t) if isinstance(
-            t, list) else str(t) for t in source_tokens]
-        patch_to_text = [" ".join(t) if isinstance(
-            t, list) else str(t) for t in target_tokens]
+        patch_from_text = [" ".join(t) if isinstance(t, list) else str(t) for t in source_tokens]
+        patch_to_text = [" ".join(t) if isinstance(t, list) else str(t) for t in target_tokens]
 
         result = {
             "question": q_tgt,
@@ -186,12 +187,11 @@ class PatchRunner:
             "target_prompt": gen.get("target_prompt", []),
         }
         if self.patch_from_generation:
-            result["source_generated_answer"] = gen.get(
-                "source_generated_answer", [])
+            result["source_generated_answer"] = gen.get("source_generated_answer", [])
         return result
 
     def run(self, output_file: str) -> None:
-        results = {
+        results: dict[str, list[Any]] = {
             "question": [],
             "answer": [],
             "Answer_num": [],
@@ -211,12 +211,12 @@ class PatchRunner:
         with tqdm(total=total_samples, desc="Processing samples", unit="sample") as pbar:
             for idx in range(num_batches):
                 batch_res = self._run_single_batch(idx)
-                for k in results.keys():
-                    results[k].extend(batch_res.get(k, []))
+                for k, v in results.items():
+                    v.extend(batch_res.get(k, []))
 
                 processed = len(batch_res.get("question", []))
                 pbar.update(processed if processed > 0 else self.batch_size)
-                pbar.set_postfix(batch=f"{idx+1}/{num_batches}")
+                pbar.set_postfix(batch=f"{idx + 1}/{num_batches}")
 
         pd.DataFrame(results).to_json(output_file, orient="records")
 
@@ -224,7 +224,7 @@ class PatchRunner:
 def run_patch(
     *,
     source_model_name: str,
-    target_model_name: Optional[str] = None,
+    target_model_name: str | None = None,
     source_dataset: str,
     target_dataset: str,
     src_prompt_template: str,
@@ -234,14 +234,14 @@ def run_patch(
     max_gen_len: int,
     source_layer: int,
     target_layer: int,
-    patch_position: Optional[int],
+    patch_position: int | None,
     seed: int,
     patch_from_generation: bool,
-    steps: Union[int, str, None],
+    steps: int | str | None,
     hs_selection: HSSelectionMode,
     patching_k: int,
     include_all_tokens: bool = False,
-    gen_cache_dir: Optional[str] = None,
+    gen_cache_dir: str | None = None,
     output_file: str,
 ) -> None:
     parsed_steps: StepsType
@@ -261,8 +261,7 @@ def run_patch(
     elif isinstance(steps, int) or steps is None:
         parsed_steps = steps
     else:
-        raise ValueError(
-            f"--steps must be an integer, 'all', or 'no_steps', got {steps!r}")
+        raise ValueError(f"--steps must be an integer, 'all', or 'no_steps', got {steps!r}")
 
     patch_config = PatchConfig(
         max_gen_len=max_gen_len,

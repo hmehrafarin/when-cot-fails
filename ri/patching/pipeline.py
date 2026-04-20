@@ -1,10 +1,15 @@
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional, Union, Tuple
+import hashlib
+import os
+from typing import Any
 
 import torch
 
+from ri.common.prompts import build_prompt_batch
 from ri.core.hooks import remove_hooks, set_patch
+from ri.utils.extraction import extract_answer_from_generation
+from ri.utils.text import prompt_text_from_rendered
 from ri.utils.tokenizer import (
     decode_tokens,
     get_eos_token_ids,
@@ -12,14 +17,10 @@ from ri.utils.tokenizer import (
     make_inputs,
     render_prompts,
 )
-from ri.utils.extraction import extract_answer_from_generation
-from ri.utils.text import prompt_text_from_rendered
-from ri.common.prompts import build_prompt_batch
 
-from .config import PatchConfig
+from .config import PatchConfig, StepsType
 from .selectors import select_positions_with_mode, select_step_positions
 from .tensor_ops import (
-    build_word_span_map,
     compute_core_token_positions,
     left_pad_offsets,
     mask_to_positions,
@@ -66,9 +67,9 @@ def _safe_token_from_id(tokenizer, token_id: int) -> str:
         return str(int(token_id))
 
 
-def _tokens_at_positions(tokenizer, ids_row, positions: List[int]) -> List[str]:
+def _tokens_at_positions(tokenizer, ids_row, positions: list[int]) -> list[str]:
     ids_list = ids_row.tolist() if hasattr(ids_row, "tolist") else list(ids_row)
-    tokens: List[str] = []
+    tokens: list[str] = []
     seq_len = len(ids_list)
     for pos in positions:
         try:
@@ -119,7 +120,7 @@ def _run_target_generation_with_patch(
         template_name=getattr(tgt_prompter, "template_name", None),
     )
 
-    result_dict: Dict[str, Any] = {
+    result_dict: dict[str, Any] = {
         "answer_num": extracted_answers["answer_num"],
         "answer_cot": extracted_answers["answer_text"],
         "source_prompt": rendered_source_prompts,
@@ -128,8 +129,7 @@ def _run_target_generation_with_patch(
         "target_patch_token": target_patch_tokens,
     }
     if patch_from_generation:
-        result_dict["source_generated_answer"] = source_extracted_answers.get(
-            'answer_text', [])
+        result_dict["source_generated_answer"] = source_extracted_answers.get("answer_text", [])
 
     return result_dict
 
@@ -142,12 +142,12 @@ def get_source_hidden_states(
     tgt_prompter,
     patch_from_generation: bool,
     batch_size: int = 1,
-) -> Tuple[torch.Tensor, Optional[List[List[int]]], Dict[str, Any]]:
+) -> tuple[torch.Tensor, list[list[int]], dict[str, Any]]:
     """Extract hidden states from source model.
 
     Returns:
         all_source_hs: (batch, seq_len, hidden_dim) hidden states
-        generated_token_ids: token ids if patch_from_generation, else None
+        generated_token_ids: token ids if patch_from_generation, else empty list
         source_extracted_answers: dict with extracted answer info
     """
     cfg = config
@@ -155,8 +155,8 @@ def get_source_hidden_states(
     source_pad_id = get_pad_id(source_tokenizer)
     source_eos_ids = get_eos_token_ids(source_tokenizer)
 
-    source_extracted_answers = {}
-    generated_token_ids = None
+    source_extracted_answers: dict[str, list[Any]] = {}
+    generated_token_ids: list[list[int]] = []
     all_source_hs = None
 
     if patch_from_generation:
@@ -165,23 +165,21 @@ def get_source_hidden_states(
         cached_data = None
 
         if cache_dir:
-            import hashlib
-            import os
             os.makedirs(cache_dir, exist_ok=True)
 
             # Create a unique hash based on inputs that affect generation
             prompt_str = "".join(source_prompt_texts)
-            model_name = getattr(
-                source_mt.model, "name_or_path", "unknown_model")
+            model_name = getattr(source_mt.model, "name_or_path", "unknown_model")
             # Include layer, max_len, and batch_size in hash to differentiate experiments
-            cache_key_str = f"{prompt_str}_{cfg.source_layer}_{cfg.max_gen_len}_{model_name}_{batch_size}"
+            cache_key_str = (
+                f"{prompt_str}_{cfg.source_layer}_{cfg.max_gen_len}_{model_name}_{batch_size}"
+            )
             cache_hash = hashlib.md5(cache_key_str.encode("utf-8")).hexdigest()
             cache_path = os.path.join(cache_dir, f"gen_cache_{cache_hash}.pt")
 
             if os.path.exists(cache_path):
                 try:
-                    cached_data = torch.load(
-                        cache_path, map_location=source_mt.device)
+                    cached_data = torch.load(cache_path, map_location=source_mt.device)
                 except Exception as e:
                     print(f"Warning: Failed to load cache {cache_path}: {e}")
 
@@ -216,20 +214,18 @@ def get_source_hidden_states(
                     "please disable --patch_from_generation or ensure the model supports hidden states."
                 )
             # Collect last token hidden state from each generation step
-            per_step_hs: List[torch.Tensor] = []  # each: (batch, hidden_dim)
+            per_step_hs: list[torch.Tensor] = []  # each: (batch, hidden_dim)
             for step_hidden in hidden_steps:
                 if step_hidden is None:
                     continue
-                hs_index = _resolve_hidden_state_index(
-                    cfg.source_layer, len(step_hidden))
+                hs_index = _resolve_hidden_state_index(cfg.source_layer, len(step_hidden))
                 layer_hidden = step_hidden[hs_index]
                 if layer_hidden.dim() == 3 and layer_hidden.size(1) == 1:
                     per_step_hs.append(layer_hidden[:, 0, :])
                 else:
                     per_step_hs.append(layer_hidden[:, -1, :])
             if not per_step_hs:
-                raise RuntimeError(
-                    "Generation produced no hidden states to select from.")
+                raise RuntimeError("Generation produced no hidden states to select from.")
 
             # (batch, num_gen_steps, hidden_dim)
             gen_hs_tensor = torch.stack(per_step_hs, dim=1)
@@ -238,13 +234,13 @@ def get_source_hidden_states(
             sequences = generation.sequences
             input_len = tokenized_source["input_ids"].shape[1]
 
-            generated_token_ids: List[List[int]] = []
             for i in range(gen_hs_tensor.size(0)):
                 gen_seq = sequences[i, input_len:]
                 valid_len = len(gen_seq)
 
-                current_eos_ids = [source_eos_ids] if isinstance(
-                    source_eos_ids, int) else source_eos_ids
+                current_eos_ids = (
+                    [source_eos_ids] if isinstance(source_eos_ids, int) else source_eos_ids
+                )
 
                 for eos_id in current_eos_ids:
                     matches = (gen_seq == eos_id).nonzero(as_tuple=True)[0]
@@ -253,27 +249,26 @@ def get_source_hidden_states(
 
                 valid_len = min(valid_len, num_gen_steps)
                 trimmed_seq = gen_seq[:valid_len]
-                generated_token_ids.append([int(tok)
-                                           for tok in trimmed_seq.tolist()])
+                generated_token_ids.append([int(tok) for tok in trimmed_seq.tolist()])
 
             # Save to cache if configured
             if cache_dir:
-                torch.save({
-                    "gen_hs_tensor": gen_hs_tensor,
-                    "generated_token_ids": generated_token_ids,
-                    "source_extracted_answers": source_extracted_answers
-                }, cache_path)
+                torch.save(
+                    {
+                        "gen_hs_tensor": gen_hs_tensor,
+                        "generated_token_ids": generated_token_ids,
+                        "source_extracted_answers": source_extracted_answers,
+                    },
+                    cache_path,
+                )
 
         all_source_hs = gen_hs_tensor
     else:
-        source_outputs = source_mt.model(
-            **tokenized_source, output_hidden_states=True)
+        source_outputs = source_mt.model(**tokenized_source, output_hidden_states=True)
         hidden_state_tuple = source_outputs.hidden_states or ()
         if not hidden_state_tuple:
-            raise RuntimeError(
-                "Model did not return hidden states; cannot perform patching.")
-        hs_index = _resolve_hidden_state_index(
-            cfg.source_layer, len(hidden_state_tuple))
+            raise RuntimeError("Model did not return hidden states; cannot perform patching.")
+        hs_index = _resolve_hidden_state_index(cfg.source_layer, len(hidden_state_tuple))
         all_source_hs = hidden_state_tuple[hs_index]
 
     return all_source_hs, generated_token_ids, source_extracted_answers
@@ -291,15 +286,14 @@ def patch_and_generate(
     config: PatchConfig,
     gold_step: bool,
     batch_size: int = 1,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
 
     cfg = config
     source_tokenizer = source_mt.tokenizer
     target_tokenizer = target_mt.tokenizer
-    target_supports_system_prompt = bool(
-        getattr(target_mt, "is_instruct_model", False))
+    target_supports_system_prompt = bool(getattr(target_mt, "is_instruct_model", False))
     tgt_template_name = getattr(tgt_prompter, "template_name", "unknown")
-    tgt_steps: Optional[int] = None
+    tgt_steps: StepsType = None
     if "non_cot" not in tgt_template_name.lower() and gold_step:
         if isinstance(cfg.steps, int) and cfg.steps > 1:
             tgt_steps = cfg.steps - 1
@@ -319,8 +313,7 @@ def patch_and_generate(
         add_generation_prompt=True,
     )
 
-    source_prompt_texts = [prompt_text_from_rendered(
-        prompt) for prompt in source_convos]
+    source_prompt_texts = [prompt_text_from_rendered(prompt) for prompt in source_convos]
 
     tokenized_source = make_inputs(
         source_tokenizer,
@@ -343,13 +336,13 @@ def patch_and_generate(
     )
 
     # Find step-specific positions within the core positions
+    step_positions: list[list[int]]
     if cfg.steps in (None, "no_steps"):
         step_positions = [[] for _ in range(len(source_prompt_positions))]
     else:
         step_positions = [
             select_step_positions(
-                source_core_positions[i] if i < len(
-                    source_core_positions) else [],
+                source_core_positions[i] if i < len(source_core_positions) else [],
                 source_prompt_texts[i] if i < len(source_prompt_texts) else "",
                 source_tokenizer,
                 cfg.steps,
@@ -359,7 +352,7 @@ def patch_and_generate(
 
     # if include_all_tokens is set, use all prompt tokens as selection pool
     use_full_selection_pool = bool(getattr(cfg, "include_all_tokens", False))
-    selection_pool: List[List[int]] = []
+    selection_pool: list[list[int]] = []
     for i in range(len(source_prompt_positions)):
         if use_full_selection_pool:
             candidates = list(source_prompt_positions[i])
@@ -371,8 +364,8 @@ def patch_and_generate(
                 candidates = list(source_prompt_positions[i])
         selection_pool.append(candidates)
 
-    source_pad_id = get_pad_id(source_tokenizer)
-    source_eos_ids = get_eos_token_ids(source_tokenizer)
+    get_pad_id(source_tokenizer)
+    get_eos_token_ids(source_tokenizer)
     target_pad_id = get_pad_id(target_tokenizer)
     target_eos_ids = get_eos_token_ids(target_tokenizer)
 
@@ -388,8 +381,7 @@ def patch_and_generate(
 
     if patch_from_generation:
         # Reconstruct selection pool (common to both paths)
-        selection_pool = [
-            list(range(len(ids))) for ids in generated_token_ids]
+        selection_pool = [list(range(len(ids))) for ids in generated_token_ids]
 
     # Prepare target inputs
     tgt_convos = build_prompt_batch(
@@ -416,36 +408,30 @@ def patch_and_generate(
 
     tgt_offsets = left_pad_offsets(tokenized_tgt)
     attn_masks = tokenized_tgt["attention_mask"]
-    valid_lens: List[int] = []
+    valid_lens: list[int] = []
     for am in attn_masks:
-        if hasattr(am, "sum"):
-            vl = int(am.sum().item())
-        else:
-            vl = int(sum(am))
+        vl = int(am.sum().item()) if hasattr(am, "sum") else int(sum(am))
         valid_lens.append(vl)
 
     # find where to patch in the target positions
-    actual_patch_positions: List[int] = []
+    actual_patch_positions: list[int] = []
     for i, off in enumerate(tgt_offsets):
         vl = valid_lens[i]
         if cfg.patch_position is None:
             idx = off + vl - 1
         elif cfg.patch_position < 0:
             idx = off + vl + int(cfg.patch_position)
-            if idx < off:
-                idx = off
+            idx = max(idx, off)
         else:
             idx = off + int(cfg.patch_position)
             max_valid = off + vl - 1
-            if idx > max_valid:
-                idx = max_valid
-            if idx < off:
-                idx = off
+            idx = min(idx, max_valid)
+            idx = max(idx, off)
         actual_patch_positions.append(idx)
 
     hs_selection_mode = cfg.hs_selection
     positions_to_select = cfg.patching_k or 1
-    selected_source_token_texts: List[List[str]] = []
+    selected_source_token_texts: list[list[str]] = []
 
     # Select token positions to extract hidden states from
     source_selected_tokens = [
@@ -473,37 +459,35 @@ def patch_and_generate(
 
         selected_source_token_texts = []
         for i, pos_list in enumerate(source_selected_tokens):
-            gen_tokens = generated_token_ids[i] if i < len(
-                generated_token_ids) else []
-            tokens_for_sample: List[str] = []
+            gen_tokens = generated_token_ids[i] if i < len(generated_token_ids) else []
+            tokens_for_sample: list[str] = []
             for pos in pos_list:
                 if 0 <= pos < len(gen_tokens):
-                    tokens_for_sample.append(
-                        _safe_token_from_id(source_tokenizer, gen_tokens[pos])
-                    )
+                    tokens_for_sample.append(_safe_token_from_id(source_tokenizer, gen_tokens[pos]))
                 else:
                     tokens_for_sample.append("")
             selected_source_token_texts.append(tokens_for_sample)
 
         hs_device = all_source_hs.device
-        selected_samples: List[torch.Tensor] = []
+        selected_samples: list[torch.Tensor] = []
         hidden_size = all_source_hs.size(-1)
 
         for i, pos_list in enumerate(source_selected_tokens):
             if not pos_list:
                 sample_vec = all_source_hs.new_zeros((0, hidden_size))
             else:
-                idx = torch.tensor(
-                    pos_list, device=hs_device, dtype=torch.long)
+                idx = torch.tensor(pos_list, device=hs_device, dtype=torch.long)
                 sample_vec = all_source_hs[i].index_select(0, idx)
             selected_samples.append(sample_vec)
         selected_source_hs = torch.stack(selected_samples, dim=0)
 
     else:
         batch_source_hs = all_source_hs
-        index_tensor = torch.tensor(
-            source_selected_tokens, device=batch_source_hs.device
-        ).unsqueeze(-1).expand(-1, -1, batch_source_hs.size(-1))  # (B, K, H)
+        index_tensor = (
+            torch.tensor(source_selected_tokens, device=batch_source_hs.device)
+            .unsqueeze(-1)
+            .expand(-1, -1, batch_source_hs.size(-1))
+        )  # (B, K, H)
         selected_source_hs = torch.gather(
             batch_source_hs,
             dim=1,
@@ -519,10 +503,9 @@ def patch_and_generate(
         ]
 
     tgt_input_ids = tokenized_tgt["input_ids"]
-    target_patch_tokens: List[str] = []
+    target_patch_tokens: list[str] = []
     for i, pos in enumerate(actual_patch_positions):
-        tokens = _tokens_at_positions(
-            target_tokenizer, tgt_input_ids[i], [pos])
+        tokens = _tokens_at_positions(target_tokenizer, tgt_input_ids[i], [pos])
         target_patch_tokens.append(tokens[0] if tokens else "")
 
     patch_config = {
@@ -546,5 +529,5 @@ def patch_and_generate(
         selected_source_token_texts,
         target_patch_tokens,
         source_extracted_answers,
-        patch_from_generation
+        patch_from_generation,
     )

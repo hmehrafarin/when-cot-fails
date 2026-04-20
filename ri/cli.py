@@ -1,14 +1,12 @@
 #!/usr/bin/env python3
 import argparse
 
-from typing import Optional, Union
-
 from ri.evaluation import run_evaluation
 from ri.patching import run_patch
 from ri.patching.cma import run_cma
 
 
-def _parse_steps(value: str) -> Union[int, str, None]:
+def _parse_steps(value: str) -> int | str | None:
     """Parse --steps argument: accepts int, 'all', 'no_steps', or None."""
     if value is None or value.lower() == "none":
         return None
@@ -16,10 +14,10 @@ def _parse_steps(value: str) -> Union[int, str, None]:
         return value.lower()
     try:
         return int(value)
-    except ValueError:
+    except ValueError as err:
         raise argparse.ArgumentTypeError(
             f"Invalid steps value: {value!r}. Expected int, 'all', 'no_steps', or 'none'."
-        )
+        ) from err
 
 
 def cli() -> None:
@@ -32,8 +30,7 @@ def cli() -> None:
     # evaluate subcommand
     ev = sub.add_parser("evaluate", help="Run model generation/evaluation")
     ev.add_argument("--model_name", default="meta-llama/Llama-3.1-8B-Instruct")
-    ev.add_argument(
-        "--dataset", default="gsm8k")
+    ev.add_argument("--dataset", default="gsm8k")
     ev.add_argument("--prompt_template", default="gsm8k_cot")
     ev.add_argument("--steps", type=int, default=None)
     ev.add_argument("--batch_size", type=int, default=16)
@@ -46,12 +43,19 @@ def cli() -> None:
     pa.add_argument("--model_name", default="meta-llama/Llama-3.1-8B-Instruct")
     pa.add_argument("--source_model_name", default=None)
     pa.add_argument("--target_model_name", default=None)
-    pa.add_argument("--source_dataset", default="outputs/single_batch_output_cot.json",
-                    help="Source dataset providing hidden states/importance")
-    pa.add_argument("--target_dataset", default="outputs/single_batch_output_non_cot.json",
-                    help="Target dataset to generate answers for")
-    pa.add_argument("--prompt_template", default=None,
-                    help="Override both src/tgt prompt templates")
+    pa.add_argument(
+        "--source_dataset",
+        default="outputs/single_batch_output_cot.json",
+        help="Source dataset providing hidden states/importance",
+    )
+    pa.add_argument(
+        "--target_dataset",
+        default="outputs/single_batch_output_non_cot.json",
+        help="Target dataset to generate answers for",
+    )
+    pa.add_argument(
+        "--prompt_template", default=None, help="Override both src/tgt prompt templates"
+    )
     pa.add_argument("--src_prompt_template", default="gsm8k_cot")
     pa.add_argument("--tgt_prompt_template", default="gsm8k_non_cot")
     pa.add_argument("--gold_step", action="store_true", default=False)
@@ -59,18 +63,32 @@ def cli() -> None:
     pa.add_argument("--max_gen_len", type=int, default=400)
     pa.add_argument("--steps", type=_parse_steps, default="no_steps")
     pa.add_argument("--seed", type=int, default=42)
-    pa.add_argument("--source_layer", type=int, default=-1,
-                    help="Layer index to extract hidden states from (source)")
-    pa.add_argument("--target_layer", type=int, default=-1,
-                    help="Layer index to patch hidden states into (target)")
-    pa.add_argument("--patching_k", type=int, default=1,
-                    help="Number of token positions (per sample) to patch",
-                    dest="patching_k")
-    pa.add_argument("--hs_selection", default=-1,
-                    help="Hidden state position: int index, or 'random_k', 'early', 'mid', 'late', 'step_wise', 'every'")
+    pa.add_argument(
+        "--source_layer",
+        type=int,
+        default=-1,
+        help="Layer index to extract hidden states from (source)",
+    )
+    pa.add_argument(
+        "--target_layer",
+        type=int,
+        default=-1,
+        help="Layer index to patch hidden states into (target)",
+    )
+    pa.add_argument(
+        "--patching_k",
+        type=int,
+        default=1,
+        help="Number of token positions (per sample) to patch",
+        dest="patching_k",
+    )
+    pa.add_argument(
+        "--hs_selection",
+        default=-1,
+        help="Hidden state position: int index, or 'random_k', 'early', 'mid', 'late', 'step_wise', 'every'",
+    )
     pa.add_argument("--include_all_tokens", action="store_true", default=False)
-    pa.add_argument("--patch_from_generation",
-                    action="store_true", default=False)
+    pa.add_argument("--patch_from_generation", action="store_true", default=False)
     pa.add_argument("--patch_position", type=int, default=None)
     pa.add_argument("--output_file", default="output_patched.json")
 
@@ -80,14 +98,11 @@ def cli() -> None:
         aliases=["cma"],
         help="Analyze patch positions and token probabilities",
     )
-    cma.add_argument(
-        "--model_name", default="meta-llama/Llama-3.1-8B-Instruct")
+    cma.add_argument("--model_name", default="meta-llama/Llama-3.1-8B-Instruct")
     cma.add_argument("--source_model_name", default=None)
     cma.add_argument("--target_model_name", default=None)
-    cma.add_argument("--source_dataset",
-                     default="outputs/output_42_no_icl_deterministic.json")
-    cma.add_argument("--target_dataset",
-                     default="outputs/output_42_no_icl_deterministic.json")
+    cma.add_argument("--source_dataset", default="outputs/output_42_no_icl_deterministic.json")
+    cma.add_argument("--target_dataset", default="outputs/output_42_no_icl_deterministic.json")
     cma.add_argument(
         "--prompt_template",
         default=None,
@@ -100,13 +115,14 @@ def cli() -> None:
     cma.add_argument("--target_layer", type=int, default=25)
     cma.add_argument("--seed", type=int, default=42)
     cma.add_argument("--steps", type=_parse_steps, default="1")
-    cma.add_argument("--hs_selection", default=-1,
-                     help="Hidden state position: int index, or 'random_k', 'early', 'mid', 'late', 'step_wise', 'every'")
+    cma.add_argument(
+        "--hs_selection",
+        default=-1,
+        help="Hidden state position: int index, or 'random_k', 'early', 'mid', 'late', 'step_wise', 'every'",
+    )
     cma.add_argument("--patching_k", type=int, default=1)
-    cma.add_argument("--include_all_tokens",
-                     action="store_true", default=False)
-    cma.add_argument("--patch_from_generation",
-                     action="store_true", default=False)
+    cma.add_argument("--include_all_tokens", action="store_true", default=False)
+    cma.add_argument("--patch_from_generation", action="store_true", default=False)
     cma.add_argument("--max_gen_len", type=int, default=400)
     cma.add_argument("--patch_position", type=int, default=None)
     cma.add_argument("--output_file", default="patch_position_analysis.json")

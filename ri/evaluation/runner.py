@@ -1,21 +1,22 @@
 from __future__ import annotations
 
 import math
-from typing import Any, Dict
+from typing import Any
 
 import pandas as pd
 from tqdm import tqdm
 
-from ri.config.settings import Constants
-from ri.core.model import ModelAndTokenizer
-from ri.prompts.prompter import Prompter
 from ri.common import (
     choose_torch_dtype,
     get_dataset,
     prepare_batch_data,
     set_random_seed,
 )
+from ri.config.settings import Constants
+from ri.core.model import ModelAndTokenizer
+from ri.prompts.prompter import Prompter
 from ri.utils.extraction import extract_answer
+
 from .config import EvaluationConfig
 from .pipeline import generate_batch_outputs
 
@@ -24,7 +25,7 @@ def run_evaluation(
     model_name: str,
     dataset: str,
     prompt_template: str,
-    steps: Optional[int],
+    steps: int | None,
     batch_size: int,
     max_gen_len: int,
     seed: int,
@@ -100,7 +101,7 @@ class EvaluationRunner:
         }
 
     def run(self, output_file: str) -> None:
-        results = {
+        results: dict[str, list[Any]] = {
             "Input": [],
             "question": [],
             "answer": [],
@@ -109,17 +110,13 @@ class EvaluationRunner:
             "Generated Answer_cot": [],
         }
 
-        num_batches = math.ceil(
-            len(self.data) / self.config.batch_size
-        )
+        num_batches = math.ceil(len(self.data) / self.config.batch_size)
         for batch_idx in tqdm(range(num_batches), desc="Evaluating"):
             batch_res = self._run_single_batch(batch_idx)
             results["question"].extend(batch_res["questions"])
             results["answer"].extend(batch_res["answers"])
-            results["Generated Answer_num"].extend(
-                batch_res["Generated Answer_num"])
-            results["Generated Answer_cot"].extend(
-                batch_res["Generated Answer_cot"])
+            results["Generated Answer_num"].extend(batch_res["Generated Answer_num"])
+            results["Generated Answer_cot"].extend(batch_res["Generated Answer_cot"])
             results["Input"].extend(batch_res["Input"])
             results["Answer_num"].extend(batch_res["Answer_num"])
 

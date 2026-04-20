@@ -1,5 +1,4 @@
 import argparse
-from typing import Optional
 
 from ri.patching.runner import run_patch
 
@@ -16,8 +15,12 @@ def _str_to_bool(v: str) -> bool:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Run a single patch experiment")
-    parser.add_argument("--model_name", type=str, default=None,
-                        help="Fallback model name when --source_model_name is not set")
+    parser.add_argument(
+        "--model_name",
+        type=str,
+        default=None,
+        help="Fallback model name when --source_model_name is not set",
+    )
     parser.add_argument("--source_model_name", type=str, default=None)
     parser.add_argument("--target_model_name", type=str, default=None)
     parser.add_argument("--source_dataset", type=str, required=True)
@@ -40,7 +43,7 @@ def main() -> None:
     parser.add_argument("--output_file", type=str, required=True)
     args = parser.parse_args()
 
-    source_model_name: Optional[str] = args.source_model_name or args.model_name
+    source_model_name: str | None = args.source_model_name or args.model_name
     if not source_model_name:
         parser.error("Provide --source_model_name or --model_name")
 

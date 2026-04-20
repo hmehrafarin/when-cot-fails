@@ -1,4 +1,4 @@
-from typing import Any, Dict, List, Optional, Union
+from typing import Any
 
 import torch
 
@@ -7,13 +7,13 @@ from .model import ModelAndTokenizer
 
 def set_patch(
     model: ModelAndTokenizer,
-    patch_config: List[Dict[str, Any]],
-) -> List[Any]:
+    patch_config: list[dict[str, Any]],
+) -> list[Any]:
     """Register forward hooks on model layers to replace hidden states at given positions."""
 
     def _make_hook(
-        hs_position: List[Union[Dict[str, int], int]],
-        hs: Optional[List[torch.Tensor]] = None,
+        hs_position: list[dict[str, int] | int],
+        hs: list[torch.Tensor] | None = None,
     ):
 
         def _unpack(output):
@@ -46,7 +46,7 @@ def set_patch(
             if not isinstance(x, torch.Tensor) or x.dim() != 3:
                 return output
 
-            B, T, H = x.shape
+            B, T, _H = x.shape
 
             if T <= 1:
                 return output
@@ -56,10 +56,7 @@ def set_patch(
 
             for i in range(B):
                 pos_i = hs_position[i]
-                if isinstance(pos_i, int):
-                    pos_list = [pos_i]
-                else:
-                    pos_list = list(pos_i)
+                pos_list = [pos_i] if isinstance(pos_i, int) else list(pos_i)
                 pos_list = [p + T if p < 0 else p for p in pos_list]
                 pos_list = [max(0, min(p, T - 1)) for p in pos_list]
 
@@ -83,14 +80,9 @@ def set_patch(
                         if isinstance(v, torch.Tensor):
                             vec_list.append(v.to(y.device, dtype=y.dtype))
                         else:
-                            vec_list.append(
-                                torch.tensor(
-                                    v, device=y.device, dtype=y.dtype)
-                            )
+                            vec_list.append(torch.tensor(v, device=y.device, dtype=y.dtype))
                 else:
-                    vec_list = [
-                        torch.tensor(vec_i, device=y.device, dtype=y.dtype)
-                    ]
+                    vec_list = [torch.tensor(vec_i, device=y.device, dtype=y.dtype)]
 
                 for j, pos in enumerate(pos_list):
                     if j >= len(vec_list):
@@ -103,7 +95,7 @@ def set_patch(
 
         return hook_fn
 
-    hooks = []
+    hooks: list[Any] = []
     for cfg in patch_config:
         hook = _make_hook(
             hs_position=cfg["hs_position"],
@@ -112,12 +104,12 @@ def set_patch(
         layers = cfg["layer_to_patch"]
         if isinstance(layers, int):
             layers = [layers]
-        for layer_idx in layers:
-            hooks.append(
-                model.model.layers[layer_idx].register_forward_hook(hook))
+        hooks.extend(
+            model.model.layers[layer_idx].register_forward_hook(hook) for layer_idx in layers
+        )
     return hooks
 
 
-def remove_hooks(hooks: List[Any]) -> None:
+def remove_hooks(hooks: list[Any]) -> None:
     for hook in hooks:
         hook.remove()

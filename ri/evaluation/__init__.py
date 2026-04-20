@@ -4,7 +4,7 @@ from .runner import EvaluationRunner, run_evaluation
 
 __all__ = [
     "EvaluationConfig",
-    "generate_batch_outputs",
     "EvaluationRunner",
+    "generate_batch_outputs",
     "run_evaluation",
 ]

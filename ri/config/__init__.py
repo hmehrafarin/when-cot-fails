@@ -1,17 +1,16 @@
+# For backwards compatibility, expose settings as a module-level object
+from . import settings
 from .settings import (
+    DEFAULT_MODEL_NAME,
     HUGGINGFACE_CACHE_DIR,
     MODEL_CACHE_DIR,
     MODEL_OUTPUT_DIR,
-    DEFAULT_MODEL_NAME,
 )
 
-# For backwards compatibility, expose settings as a module-level object
-from . import settings
-
 __all__ = [
-    "settings",
+    "DEFAULT_MODEL_NAME",
     "HUGGINGFACE_CACHE_DIR",
     "MODEL_CACHE_DIR",
     "MODEL_OUTPUT_DIR",
-    "DEFAULT_MODEL_NAME",
+    "settings",
 ]

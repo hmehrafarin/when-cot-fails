@@ -1,23 +1,22 @@
 from __future__ import annotations
 
-from typing import Dict, List, Literal, Optional, Union
+from typing import Literal
 
 from ri.prompts.prompter import Prompter
 
-
-StepsLiteral = Union[int, Literal["all"], Literal["no_steps"]]
+StepsLiteral = int | Literal["all"] | Literal["no_steps"]
 
 
 def build_prompt_batch(
     prompter: Prompter,
-    batch_row: List[Dict[str, Optional[str]]],
-    steps: Optional[StepsLiteral] = None,
+    batch_row: list[dict[str, str | None]],
+    steps: StepsLiteral | None = None,
 ):
     """
     Build a batch of prompts based on the prompter template.
     """
 
-    def _slice_answer(ans: Optional[str]) -> str:
+    def _slice_answer(ans: str | None) -> str:
         if not ans or steps in (None, "no_steps"):
             return ""
         lines = [ln.strip() for ln in ans.split("\n") if ln.strip()]
@@ -29,14 +28,16 @@ def build_prompt_batch(
             return "\n".join(lines[:steps])
         raise ValueError(f"Unsupported steps value: {steps!r}")
 
-    adjusted_rows: List[Dict[str, Optional[str]]] = []
+    adjusted_rows: list[dict[str, str | None]] = []
     for row in batch_row:
         q = row.get("question", "")
         a = row.get("answer", None)
-        adjusted_rows.append({
-            "question": q,
-            "answer": _slice_answer(a),
-        })
+        adjusted_rows.append(
+            {
+                "question": q,
+                "answer": _slice_answer(a),
+            }
+        )
 
     system_text = prompter.template.get(
         "system",
@@ -44,10 +45,10 @@ def build_prompt_batch(
     )
     user_prompts = prompter.create_prompt(adjusted_rows)
 
-    convos = []
-    for up in user_prompts:
-        convos.append([
+    return [
+        [
             {"role": "system", "content": system_text},
             {"role": "user", "content": up},
-        ])
-    return convos
+        ]
+        for up in user_prompts
+    ]

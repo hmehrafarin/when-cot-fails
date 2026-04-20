@@ -1,12 +1,12 @@
 import re
-from typing import Any, Dict, List, Optional
+from typing import Any
 
-from .tokenizer import find_special_token, get_eot_token, get_end_header_token
+from .tokenizer import find_special_token, get_end_header_token, get_eot_token
 
 NUM_RE = re.compile(r"-?\d[\d,]*(?:\.\d+)?")
 
 
-def parse_number(text: object) -> Optional[float]:
+def parse_number(text: object) -> float | None:
     """
     Parse the last numeric token from ``text``.
     """
@@ -32,14 +32,14 @@ def _format_number(value: float) -> str:
     return "0" if text in {"", "-0"} else text
 
 
-def _parse_number_text(text: object) -> Optional[str]:
+def _parse_number_text(text: object) -> str | None:
     value = parse_number(text)
     if value is None:
         return None
     return _format_number(value)
 
 
-def extract_answer(batch_text: List[str]) -> List[Optional[str]]:
+def extract_answer(batch_text: list[str]) -> list[str | None]:
     """
     Extracts the answer from text using the #### pattern (GSM8K format).
     """
@@ -51,7 +51,7 @@ def extract_answer(batch_text: List[str]) -> List[Optional[str]]:
     return answers
 
 
-def extract_final_answer(text: str) -> Optional[str]:
+def extract_final_answer(text: str) -> str | None:
     """
     Extract the numeric value that follows a 'Final Answer :' label.
 
@@ -70,14 +70,14 @@ def extract_final_answer(text: str) -> Optional[str]:
     return _parse_number_text(matches[-1])
 
 
-def _extract_last_numeric_token(text: str) -> Optional[str]:
+def _extract_last_numeric_token(text: str) -> str | None:
     """
     Return the last numeric token found in *text*.
     """
     return _parse_number_text(text)
 
 
-def _split_after_marker(text: str, marker: Optional[str]) -> str:
+def _split_after_marker(text: str, marker: str | None) -> str:
     """Split text after a marker."""
     if not marker:
         return text
@@ -88,7 +88,7 @@ def _split_after_marker(text: str, marker: Optional[str]) -> str:
     return text
 
 
-def _split_before_marker(text: str, marker: Optional[str]) -> str:
+def _split_before_marker(text: str, marker: str | None) -> str:
     """Split text before a marker."""
     if not marker:
         return text
@@ -99,12 +99,11 @@ def _split_before_marker(text: str, marker: Optional[str]) -> str:
     return text
 
 
-_ANSWER_PROMPT_RE = re.compile(
-    r"^\s*answer\s*:\s*", flags=re.IGNORECASE | re.MULTILINE)
+_ANSWER_PROMPT_RE = re.compile(r"^\s*answer\s*:\s*", flags=re.IGNORECASE | re.MULTILINE)
 
 
-def _dedupe_preserve_order(items: List[str]) -> List[str]:
-    unique: List[str] = []
+def _dedupe_preserve_order(items: list[str]) -> list[str]:
+    unique: list[str] = []
     seen = set()
     for item in items:
         if not item or item in seen:
@@ -114,11 +113,11 @@ def _dedupe_preserve_order(items: List[str]) -> List[str]:
     return unique
 
 
-def _candidate_assistant_start_markers(tokenizer: Optional[Any]) -> List[str]:
+def _candidate_assistant_start_markers(tokenizer: Any | None) -> list[str]:
     """
     Candidate markers that precede assistant content in chat templates.
     """
-    markers: List[str] = []
+    markers: list[str] = []
 
     im_start = None
     if tokenizer is not None:
@@ -144,11 +143,11 @@ def _candidate_assistant_start_markers(tokenizer: Optional[Any]) -> List[str]:
     return _dedupe_preserve_order(markers)
 
 
-def _candidate_turn_end_markers(tokenizer: Optional[Any]) -> List[str]:
+def _candidate_turn_end_markers(tokenizer: Any | None) -> list[str]:
     """
     Candidate end-of-turn markers across supported chat formats.
     """
-    markers: List[str] = []
+    markers: list[str] = []
 
     if tokenizer is not None:
         eot_token = get_eot_token(tokenizer)
@@ -162,7 +161,7 @@ def _candidate_turn_end_markers(tokenizer: Optional[Any]) -> List[str]:
     return _dedupe_preserve_order(markers)
 
 
-def _split_after_any_marker(text: str, markers: List[str]) -> str:
+def _split_after_any_marker(text: str, markers: list[str]) -> str:
     """
     Split after the latest matching marker variant in text.
     """
@@ -178,14 +177,14 @@ def _split_after_any_marker(text: str, markers: List[str]) -> str:
                 best_variant = variant
     if best_idx < 0:
         return text
-    return text[best_idx + len(best_variant):]
+    return text[best_idx + len(best_variant) :]
 
 
-def _split_before_any_marker(text: str, markers: List[str]) -> str:
+def _split_before_any_marker(text: str, markers: list[str]) -> str:
     """
     Split before the earliest matching marker variant in text.
     """
-    earliest_idx: Optional[int] = None
+    earliest_idx: int | None = None
     for marker in markers:
         for variant in (marker, f"{marker}\n", f"{marker}\n\n"):
             idx = text.find(variant)
@@ -198,16 +197,14 @@ def _split_before_any_marker(text: str, markers: List[str]) -> str:
     return text[:earliest_idx]
 
 
-def _extract_number_after_final_answer_label(text: str) -> Optional[str]:
+def _extract_number_after_final_answer_label(text: str) -> str | None:
     """
     Extract last numeric token from the clause after the final 'Final Answer:' label.
     """
-    matches = list(
-        re.finditer(r"Final\s+Answer\s*:\s*", text, flags=re.IGNORECASE)
-    )
+    matches = list(re.finditer(r"Final\s+Answer\s*:\s*", text, flags=re.IGNORECASE))
     if not matches:
         return None
-    tail = text[matches[-1].end():].strip()
+    tail = text[matches[-1].end() :].strip()
     if not tail:
         return None
     return _parse_number_text(tail)
@@ -220,14 +217,14 @@ def _split_after_answer_prompt(text: str) -> str:
     match = _ANSWER_PROMPT_RE.search(text)
     if not match:
         return text
-    return text[match.end():]
+    return text[match.end() :]
 
 
 def extract_answer_from_generation(
-    batch_text: List[str],
-    tokenizer: Optional[Any] = None,
-    template_name: Optional[str] = None,
-) -> Dict[str, List[Optional[str]]]:
+    batch_text: list[str],
+    tokenizer: Any | None = None,
+    template_name: str | None = None,
+) -> dict[str, list[str | None]]:
     """
     Extracts the answer from model generation output.
 
@@ -236,8 +233,7 @@ def extract_answer_from_generation(
     dict
         ``{"answer_text": [...], "answer_num": [...]}``
     """
-    answers: Dict[str, List[Optional[str]]] = {
-        "answer_text": [], "answer_num": []}
+    answers: dict[str, list[str | None]] = {"answer_text": [], "answer_num": []}
     end_header = get_end_header_token(tokenizer) if tokenizer else None
     if not end_header:
         end_header = "<|end_header_id|>"
@@ -245,14 +241,13 @@ def extract_answer_from_generation(
     assistant_start_markers = _candidate_assistant_start_markers(tokenizer)
     turn_end_markers = _candidate_turn_end_markers(tokenizer)
 
-    for text in batch_text:
-        text_after_header = _split_after_marker(text, end_header)
-        prefix_trimmed = text_after_header != text
+    for raw_text in batch_text:
+        text_after_header = _split_after_marker(raw_text, end_header)
+        prefix_trimmed = text_after_header != raw_text
         text = text_after_header
 
         if not prefix_trimmed:
-            text_after_assistant = _split_after_any_marker(
-                text, assistant_start_markers)
+            text_after_assistant = _split_after_any_marker(text, assistant_start_markers)
             if text_after_assistant != text:
                 prefix_trimmed = True
                 text = text_after_assistant
@@ -284,7 +279,6 @@ def extract_answer_from_generation(
                 matched_number = _extract_last_numeric_token(text)
 
         answers["answer_text"].append(text)
-        answers["answer_num"].append(
-            matched_number if matched_number else None)
+        answers["answer_num"].append(matched_number if matched_number else None)
 
     return answers

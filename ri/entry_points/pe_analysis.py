@@ -2,7 +2,8 @@ from __future__ import annotations
 
 import json
 import os
-from typing import Any, Dict, List, Optional
+import traceback
+from typing import Any
 
 import fire
 import torch
@@ -10,15 +11,15 @@ import torch.nn.functional as F
 from tqdm import tqdm
 
 from ri.config.settings import PATCH_LOGITS_CACHE_DIR
+from ri.core.hooks import remove_hooks, set_patch
 from ri.patching.cma import CausalMediationRunner
 from ri.patching.cma.pipeline import (
     build_prompt_inputs,
     make_batched_input,
     resolve_target_steps,
 )
-from ri.core.hooks import remove_hooks, set_patch
-from ri.patching.logit_cache import LogitCache, LogitCacheConfig
 from ri.patching.config import PatchConfig
+from ri.patching.logit_cache import LogitCache, LogitCacheConfig
 from ri.patching.pipeline import _safe_token_from_id
 from ri.patching.tensor_ops import left_pad_offsets
 from ri.utils import (
@@ -31,7 +32,7 @@ from ri.utils import (
 
 def compute_probs_batched(
     logits: torch.Tensor,
-    token_ids: List[int],
+    token_ids: list[int],
     position: int = -1,
 ) -> torch.Tensor:
     """
@@ -49,13 +50,13 @@ def compute_probs_batched(
 
 
 def _parse_target_positions_arg(
-    target_positions: Optional[Any],
-) -> Optional[List[int]]:
+    target_positions: Any | None,
+) -> list[int] | None:
     if target_positions is None:
         return None
 
-    def _to_int_list(values: List[Any]) -> List[int]:
-        parsed_values: List[int] = []
+    def _to_int_list(values: list[Any]) -> list[int]:
+        parsed_values: list[int] = []
         for value in values:
             try:
                 parsed_values.append(int(value))
@@ -76,16 +77,15 @@ def _parse_target_positions_arg(
 
     # Fire may parse `--target_positions=0,-1` as `(0, -1)`; accept either.
     if (
-        (raw.startswith("(") and raw.endswith(")"))
-        or (raw.startswith("[") and raw.endswith("]"))
+        (raw.startswith("(") and raw.endswith(")")) or (raw.startswith("[") and raw.endswith("]"))
     ) and len(raw) >= 2:
         raw = raw[1:-1].strip()
     if not raw:
         return None
 
-    parsed_tokens: List[Any] = []
-    for token in raw.split(","):
-        token = token.strip()
+    parsed_tokens: list[Any] = []
+    for raw_token in raw.split(","):
+        token = raw_token.strip()
         if not token:
             continue
         parsed_tokens.append(token)
@@ -95,14 +95,14 @@ def _parse_target_positions_arg(
 
 
 def _resolve_target_positions(
-    valid_target_positions: List[int],
-    requested_positions: Optional[List[int]],
-) -> List[int]:
+    valid_target_positions: list[int],
+    requested_positions: list[int] | None,
+) -> list[int]:
     if requested_positions is None:
         return list(valid_target_positions)
 
     num_valid = len(valid_target_positions)
-    resolved: List[int] = []
+    resolved: list[int] = []
     seen: set[int] = set()
 
     for requested in requested_positions:
@@ -126,13 +126,13 @@ def _is_complete_source_result_file(
     sample_idx: int,
     source_position: int,
     expected_num_layers: int,
-    expected_target_positions: List[int],
+    expected_target_positions: list[int],
 ) -> bool:
     if not os.path.exists(file_path):
         return False
 
     try:
-        with open(file_path, "r", encoding="utf-8") as f:
+        with open(file_path, encoding="utf-8") as f:
             payload = json.load(f)
     except (OSError, json.JSONDecodeError):
         return False
@@ -159,21 +159,15 @@ def _is_complete_source_result_file(
             return False
         if len(positions) != len(expected_target_positions):
             return False
-        actual_target_positions = [
-            entry.get("target_position") for entry in positions
-        ]
+        actual_target_positions = [entry.get("target_position") for entry in positions]
         if actual_target_positions != expected_target_positions:
             return False
 
     payload_target_positions = payload.get("target_positions_resolved")
-    if payload_target_positions is not None:
-        if payload_target_positions != expected_target_positions:
-            return False
-
-    return True
+    return payload_target_positions is None or payload_target_positions == expected_target_positions
 
 
-def _write_json_atomic(file_path: str, payload: Dict[str, Any]) -> None:
+def _write_json_atomic(file_path: str, payload: dict[str, Any]) -> None:
     tmp_path = f"{file_path}.tmp"
     with open(tmp_path, "w", encoding="utf-8") as f:
         json.dump(payload, f, indent=2, default=str)
@@ -198,12 +192,12 @@ class PatchEffectAnalyzer(CausalMediationRunner):
         patch_from_generation: bool = True,
         seed: int = 42,
         gold_step: bool = True,
-        target_model_name: Optional[str] = None,
+        target_model_name: str | None = None,
         max_gen_len: int = 400,
-        start_src_pos: Optional[int] = 0,
+        start_src_pos: int | None = 0,
         cache_logits: bool = True,
-        logit_cache_dir: Optional[str] = None,
-        target_positions: Optional[str] = None,
+        logit_cache_dir: str | None = None,
+        target_positions: str | None = None,
         resume: bool = False,
     ):
         patch_config = PatchConfig(
@@ -239,9 +233,9 @@ class PatchEffectAnalyzer(CausalMediationRunner):
 
     def _get_all_layers_hidden_states(
         self,
-        tokenized_source: Dict[str, torch.Tensor],
-        source_prompt_texts: List[str],
-    ) -> tuple[List[torch.Tensor], torch.Tensor]:
+        tokenized_source: dict[str, torch.Tensor],
+        source_prompt_texts: list[str],
+    ) -> tuple[list[torch.Tensor], torch.Tensor]:
         """
         Get hidden states from all layers during generation.
 
@@ -273,32 +267,28 @@ class PatchEffectAnalyzer(CausalMediationRunner):
 
         # hidden_steps: tuple of (steps) of tuple (layers) of tensor (B, 1, H)
         num_layers = len(hidden_steps[0])
-        layers_hs_list: List[List[torch.Tensor]] = [[]
-                                                    for _ in range(num_layers)]
+        layers_hs_list: list[list[torch.Tensor]] = [[] for _ in range(num_layers)]
 
         for step_states in hidden_steps:
             for layer_idx, layer_tensor in enumerate(step_states):
                 # Extract last token hidden state
-                hs = layer_tensor[:, -1,
-                                  :] if layer_tensor.dim() == 3 else layer_tensor
+                hs = layer_tensor[:, -1, :] if layer_tensor.dim() == 3 else layer_tensor
                 layers_hs_list[layer_idx].append(hs)
 
         # Stack to (B, T, H) for each layer
         return [torch.stack(layer_list, dim=1) for layer_list in layers_hs_list], generated_ids
 
-    def _run_single_sample(self, sample_idx: int, output_folder: str) -> None:
+    def _run_single_sample(self, sample_idx: int, output_folder: str) -> None:  # type: ignore[override]
         """Analyze patch effects for a single sample, saving per source position."""
         source_sample = self.source_data[sample_idx]
         target_sample = self.target_data[sample_idx]
 
         source_tokenizer = self.source_mt.tokenizer
         target_tokenizer = self.target_mt.tokenizer
-        target_supports_system = bool(
-            getattr(self.target_mt, "is_instruct_model", False))
+        target_supports_system = bool(getattr(self.target_mt, "is_instruct_model", False))
 
         # Build source inputs
-        batched_input_source = make_batched_input(
-            source_sample, include_generated=True)
+        batched_input_source = make_batched_input(source_sample, include_generated=True)
         _, _, source_prompt_texts, tokenized_source = build_prompt_inputs(
             source_tokenizer,
             self.src_prompter,
@@ -315,12 +305,9 @@ class PatchEffectAnalyzer(CausalMediationRunner):
         )
 
         # Build target inputs
-        batched_input_tgt = make_batched_input(
-            target_sample, include_generated=False)
-        tgt_template_name = getattr(
-            self.tgt_prompter, "template_name", "unknown")
-        tgt_steps = resolve_target_steps(
-            self.config.steps, tgt_template_name, self.gold_step)
+        batched_input_tgt = make_batched_input(target_sample, include_generated=False)
+        tgt_template_name = getattr(self.tgt_prompter, "template_name", "unknown")
+        tgt_steps = resolve_target_steps(self.config.steps, tgt_template_name, self.gold_step)
 
         _, _, _, tokenized_tgt = build_prompt_inputs(
             target_tokenizer,
@@ -350,7 +337,8 @@ class PatchEffectAnalyzer(CausalMediationRunner):
 
         # Get source CoT
         source_cot = source_sample.get(
-            "Generated Answer_cot", source_sample.get("Generated Answer_CoT", ""))
+            "Generated Answer_cot", source_sample.get("Generated Answer_CoT", "")
+        )
         if isinstance(source_cot, list):
             source_cot = source_cot[0] if source_cot else ""
         source_cot = str(source_cot or "").strip()
@@ -368,8 +356,7 @@ class PatchEffectAnalyzer(CausalMediationRunner):
                 do_sample=False,
             )
 
-        target_baseline_text = decode_tokens(
-            target_tokenizer, target_baseline_gen)
+        target_baseline_text = decode_tokens(target_tokenizer, target_baseline_gen)
         target_baseline_extracted = extract_answer_from_generation(
             target_baseline_text,
             tokenizer=target_tokenizer,
@@ -377,22 +364,23 @@ class PatchEffectAnalyzer(CausalMediationRunner):
         )
         target_answer_num = (
             target_baseline_extracted["answer_num"][0]
-            if target_baseline_extracted.get("answer_num") else None
+            if target_baseline_extracted.get("answer_num")
+            else None
         )
         target_answer_token_ids = (
-            target_tokenizer.encode(
-                str(target_answer_num).strip(), add_special_tokens=False)
-            if target_answer_num is not None else []
+            target_tokenizer.encode(str(target_answer_num).strip(), add_special_tokens=False)
+            if target_answer_num is not None
+            else []
         )
 
         # Compute baseline logits and probabilities
         with torch.no_grad():
-            baseline_output = self.target_mt.model(
-                **tokenized_tgt, output_hidden_states=False)
+            baseline_output = self.target_mt.model(**tokenized_tgt, output_hidden_states=False)
         baseline_logits = baseline_output.logits
 
         before_patch_target_prob = compute_probs_batched(
-            baseline_logits, target_answer_token_ids).item()
+            baseline_logits, target_answer_token_ids
+        ).item()
 
         # Get number of layers and source positions
         # all_layers_hs has N+1 elements (embeddings + N layers)
@@ -425,8 +413,8 @@ class PatchEffectAnalyzer(CausalMediationRunner):
             cache_config = LogitCacheConfig(
                 cache_dir=self.logit_cache_dir,
                 sample_idx=sample_idx,
-                source_model_name=self.source_mt.model_name,
-                target_model_name=self.target_mt.model_name,
+                source_model_name=self.source_mt.model_name or "",
+                target_model_name=self.target_mt.model_name or "",
                 source_dataset=self.source_dataset_path,
                 target_dataset=self.target_dataset_path,
                 max_gen_len=self.config.max_gen_len,
@@ -437,14 +425,18 @@ class PatchEffectAnalyzer(CausalMediationRunner):
             logit_cache = LogitCache(cache_config)
             cache_info = logit_cache.get_cache_info()
             if cache_info["exists"]:
-                print(f"Found existing cache at {cache_info['cache_path']} with {cache_info['num_files']} files")
+                print(
+                    f"Found existing cache at {cache_info['cache_path']} with {cache_info['num_files']} files"
+                )
 
         # Get vocab size for cache tensor allocation
         vocab_size = self.target_mt.model.config.vocab_size
 
         # Process each source position separately
         skipped_completed = 0
-        for src_pos in tqdm(range(start_pos, num_source), desc=f"Sample {sample_idx} Source positions", leave=False):
+        for src_pos in tqdm(
+            range(start_pos, num_source), desc=f"Sample {sample_idx} Source positions", leave=False
+        ):
             output_file = os.path.join(output_folder, f"source_{src_pos}.json")
             if self.resume:
                 if _is_complete_source_result_file(
@@ -457,14 +449,11 @@ class PatchEffectAnalyzer(CausalMediationRunner):
                     skipped_completed += 1
                     continue
                 if os.path.exists(output_file):
-                    print(
-                        f"  Recomputing incomplete result: {output_file}"
-                    )
+                    print(f"  Recomputing incomplete result: {output_file}")
 
             # Get the token being patched at this source position
             patched_token_id = generated_ids[0, src_pos].item()
-            patched_token_str = _safe_token_from_id(
-                source_tokenizer, patched_token_id)
+            patched_token_str = _safe_token_from_id(source_tokenizer, patched_token_id)
 
             # Try to load cached logits for this source position
             cached_logits = None
@@ -479,17 +468,17 @@ class PatchEffectAnalyzer(CausalMediationRunner):
                 logits_to_cache = torch.zeros(
                     (num_layers, len(target_positions), vocab_size),
                     dtype=torch.float32,
-                    device='cpu',
+                    device="cpu",
                 )
 
-            layer_results: Dict[int, Dict[str, Any]] = {}
+            layer_results: dict[int, dict[str, Any]] = {}
 
             for layer_idx in range(num_layers):
                 # Output of layer_idx is at index layer_idx + 1
                 hs_tensor = all_layers_hs[layer_idx + 1][0]  # (seq_len, H)
-                src_hs = hs_tensor[src_pos:src_pos + 1]  # (1, H)
+                src_hs = hs_tensor[src_pos : src_pos + 1]  # (1, H)
 
-                layer_pos_results: List[Dict[str, Any]] = []
+                layer_pos_results: list[dict[str, Any]] = []
 
                 for tgt_idx, tgt_pos in enumerate(target_positions):
                     # Check if we can use cached logits
@@ -506,12 +495,12 @@ class PatchEffectAnalyzer(CausalMediationRunner):
                             "hs": src_hs,
                         }
 
-                        hooks = set_patch(self.target_mt.model,
-                                          [patch_config_dict])
+                        hooks = set_patch(self.target_mt.model, [patch_config_dict])
                         try:
                             with torch.no_grad():
                                 outputs = self.target_mt.model(
-                                    **tokenized_tgt, output_hidden_states=False)
+                                    **tokenized_tgt, output_hidden_states=False
+                                )
                         finally:
                             remove_hooks(hooks)
 
@@ -522,15 +511,20 @@ class PatchEffectAnalyzer(CausalMediationRunner):
                             logits_to_cache[layer_idx, tgt_idx] = logits[0, -1].cpu()
 
                     after_patch_target_prob = compute_probs_batched(
-                        logits, target_answer_token_ids).item()
+                        logits, target_answer_token_ids
+                    ).item()
 
-                    pe = (before_patch_target_prob - after_patch_target_prob) / max(after_patch_target_prob, 1e-10)
+                    pe = (before_patch_target_prob - after_patch_target_prob) / max(
+                        after_patch_target_prob, 1e-10
+                    )
 
-                    layer_pos_results.append({
-                        "target_position": tgt_pos,
-                        "after_patch_target_prob": after_patch_target_prob,
-                        "patch_effect": pe,
-                    })
+                    layer_pos_results.append(
+                        {
+                            "target_position": tgt_pos,
+                            "after_patch_target_prob": after_patch_target_prob,
+                            "patch_effect": pe,
+                        }
+                    )
 
                 layer_results[layer_idx] = {
                     "positions": layer_pos_results,
@@ -558,7 +552,7 @@ class PatchEffectAnalyzer(CausalMediationRunner):
         if self.resume and skipped_completed:
             print(f"Skipped {skipped_completed} completed source files for sample {sample_idx}")
 
-    def run(
+    def run(  # type: ignore[override]
         self,
         sample_idx: int = 0,
         output_dir: str = "pe_output",
@@ -575,9 +569,7 @@ class PatchEffectAnalyzer(CausalMediationRunner):
         """
         total_samples = min(len(self.source_data), len(self.target_data))
         if sample_idx >= total_samples:
-            raise ValueError(
-                f"sample_idx {sample_idx} exceeds available samples ({total_samples})"
-            )
+            raise ValueError(f"sample_idx {sample_idx} exceeds available samples ({total_samples})")
 
         # Create output folder
         output_folder = os.path.join(output_dir, f"sample_{sample_idx}")
@@ -587,29 +579,27 @@ class PatchEffectAnalyzer(CausalMediationRunner):
             self._run_single_sample(sample_idx, output_folder)
         except Exception as e:
             print(f"Error analyzing sample {sample_idx}: {e}")
-            import traceback
             traceback.print_exc()
             error_file = os.path.join(output_folder, "error.json")
             with open(error_file, "w") as f:
-                json.dump({"sample_idx": sample_idx,
-                          "error": str(e)}, f, indent=2)
+                json.dump({"sample_idx": sample_idx, "error": str(e)}, f, indent=2)
 
         print(f"Results saved to {output_folder}")
 
 
 def main(
     source_model_name: str = "meta-llama/Llama-3.1-8B-Instruct",
-    target_model_name: Optional[str] = None,
+    target_model_name: str | None = None,
     source_dataset: str = "outputs/single_batch_output_cot.json",
     target_dataset: str = "outputs/single_batch_output_cot.json",
     output_dir: str = "pe_output",
     sample_idx: int = 0,
-    start_src_pos: Optional[int] = 0,
+    start_src_pos: int | None = 0,
     seed: int = 42,
     max_gen_len: int = 400,
     cache_logits: bool = True,
-    logit_cache_dir: Optional[str] = None,
-    target_positions: Optional[str] = None,
+    logit_cache_dir: str | None = None,
+    target_positions: str | None = None,
     resume: bool = False,
 ):
     """

@@ -1,17 +1,15 @@
 #!/usr/bin/env python3
 import subprocess
 from pathlib import Path
-from typing import Optional, Tuple, Union
 
 import fire
-
 
 DEFAULT_MODEL_NAME = "meta-llama/Llama-3.1-8B-Instruct"
 
 
 def run(
-    source_model_name: Optional[str] = None,
-    target_model_name: Optional[str] = None,
+    source_model_name: str | None = None,
+    target_model_name: str | None = None,
     model_name: str = DEFAULT_MODEL_NAME,
     source_dataset: str = "outputs/token_importance.json",
     target_dataset: str = "outputs/token_importance.json",
@@ -21,17 +19,17 @@ def run(
     batch_size: int = 20,
     max_gen_len: int = 400,
     patch_from_generation: bool = False,
-    steps: Union[int, str] = 1,
+    steps: int | str = 1,
     layers: int = 31,
-    target_layer: Optional[int] = None,
+    target_layer: int | None = None,
     hs_selection: str = "-1",
-    patching_k_values: Tuple[int, ...] = (1,),
+    patching_k_values: tuple[int, ...] = (1,),
     seed: int = 42,
     output_dir: str = "patch",
     same_layer_patch: bool = False,
-    patch_position: Optional[int] = None,
-    start_layer: Optional[int] = None,
-    gen_cache_dir: Optional[str] = None,
+    patch_position: int | None = None,
+    start_layer: int | None = None,
+    gen_cache_dir: str | None = None,
 ) -> None:
     """
     Run patch experiments over layer and top-k grids.
@@ -79,18 +77,18 @@ def run(
 
     source_start = start_layer if start_layer is not None else layers
     source_layers = range(source_start, -1, -1)
-    target_layers = (
-        range(layers, -1, -1) if target_layer is None else [target_layer]
-    )
+    target_layers = range(layers, -1, -1) if target_layer is None else [target_layer]
 
     for src_layer in source_layers:
         for tgt_layer in target_layers:
             if same_layer_patch and src_layer != tgt_layer:
                 continue
             for patching_k in patching_k_values:
-                out_file = output_path / \
-                    f"src{src_layer}_tgt{tgt_layer}_k{patching_k}_step{steps}.json"
-                cmd = base_cmd + [
+                out_file = (
+                    output_path / f"src{src_layer}_tgt{tgt_layer}_k{patching_k}_step{steps}.json"
+                )
+                cmd = [
+                    *base_cmd,
                     f"--source_layer={src_layer}",
                     f"--target_layer={tgt_layer}",
                     f"--patching_k={patching_k}",

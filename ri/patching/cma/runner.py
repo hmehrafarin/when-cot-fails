@@ -1,17 +1,18 @@
 from __future__ import annotations
 
 import json
-from typing import Any, Dict, Optional, Union
+from typing import Any
 
 from tqdm import tqdm
 
 from ri.config import DEFAULT_MODEL_NAME
 from ri.patching.config import HSSelectionMode, PatchConfig, StepsType
 from ri.patching.runner import PatchRunner
+
 from . import pipeline as cma_pipeline
 
 
-def coerce_steps(value: Union[int, str, None]) -> StepsType:
+def coerce_steps(value: int | str | None) -> StepsType:
     """Convert steps argument to StepsType."""
     if value is None:
         return None
@@ -48,7 +49,7 @@ class CausalMediationRunner(PatchRunner):
         patch_config: PatchConfig,
         seed: int,
         gold_step: bool,
-        target_model_name: Optional[str] = None,
+        target_model_name: str | None = None,
     ):
         super().__init__(
             source_model_name=source_model_name,
@@ -65,16 +66,14 @@ class CausalMediationRunner(PatchRunner):
         )
         self.config = patch_config
 
-    def _run_single_sample(self, sample_idx: int) -> Dict[str, Any]:
+    def _run_single_sample(self, sample_idx: int) -> dict[str, Any]:
         source_sample = self.source_data[sample_idx]
         target_sample = self.target_data[sample_idx]
 
         batched_input_source = cma_pipeline.make_batched_input(
             source_sample, include_generated=True
         )
-        batched_input_tgt = cma_pipeline.make_batched_input(
-            target_sample, include_generated=False
-        )
+        batched_input_tgt = cma_pipeline.make_batched_input(target_sample, include_generated=False)
 
         return cma_pipeline.analyze_patch_positions(
             source_mt=self.source_mt,
@@ -116,8 +115,8 @@ class PatchPositionAnalyzer(CausalMediationRunner):
 
 def run_cma(
     *,
-    source_model_name: Optional[str] = None,
-    target_model_name: Optional[str] = None,
+    source_model_name: str | None = None,
+    target_model_name: str | None = None,
     model_name: str = DEFAULT_MODEL_NAME,
     source_dataset: str = "outputs/output_42_no_icl_deterministic.json",
     target_dataset: str = "outputs/output_42_no_icl_deterministic.json",
@@ -127,13 +126,13 @@ def run_cma(
     source_layer: int = 25,
     target_layer: int = 25,
     seed: int = 42,
-    steps: Union[int, str, None] = 1,
+    steps: int | str | None = 1,
     hs_selection: HSSelectionMode = -1,
     patching_k: int = 1,
     include_all_tokens: bool = False,
     patch_from_generation: bool = False,
     max_gen_len: int = 400,
-    patch_position: Optional[int] = None,
+    patch_position: int | None = None,
     output_file: str = "patch_position_analysis.json",
 ) -> None:
     resolved_source_model = source_model_name or model_name

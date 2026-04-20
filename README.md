@@ -4,9 +4,15 @@ Toolkit for hidden-state patching experiments on reasoning models. Patches activ
 
 ## Setup
 
+This project uses [uv](https://docs.astral.sh/uv/) for environment and package management.
+
 ```bash
-pip install -e .
+uv sync
 ```
+
+This creates a virtual environment in `.venv/` and installs the project in editable mode.
+
+Run commands via `uv run` (e.g. `uv run ri ...`), or activate the environment with `source .venv/bin/activate`.
 
 Requires Python 3.9+, PyTorch, and Transformers.
 

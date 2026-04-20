@@ -1,5 +1,5 @@
 import re
-from typing import Any, Optional
+from typing import Any
 
 import torch
 import transformers
@@ -12,15 +12,15 @@ class ModelAndTokenizer:
 
     def __init__(
         self,
-        model_name: Optional[str] = None,
-        model: Optional[Any] = None,
-        tokenizer: Optional[Any] = None,
+        model_name: str | None = None,
+        model: Any | None = None,
+        tokenizer: Any | None = None,
         low_cpu_mem_usage: bool = True,
-        torch_dtype: Optional[torch.dtype] = None,
+        torch_dtype: torch.dtype | None = None,
         require_grad: bool = False,
         use_fast: bool = True,
         device: str = "cuda",
-        cache_dir: Optional[str] = None,
+        cache_dir: str | None = None,
     ):
         if cache_dir is None:
             cache_dir = settings.MODEL_CACHE_DIR
@@ -53,9 +53,7 @@ class ModelAndTokenizer:
         self.model_name = self._derive_model_name(model_name, model)
         self.is_instruct_model = self._detect_instruct(self.model_name)
         self.layer_names = [
-            n
-            for n, _ in model.named_modules()
-            if (re.match(r"^(h|layers)\.\d+$", n))
+            n for n, _ in model.named_modules() if (re.match(r"^(h|layers)\.\d+$", n))
         ]
         self.num_layers = len(self.layer_names)
 
@@ -68,7 +66,7 @@ class ModelAndTokenizer:
         )
 
     @staticmethod
-    def _derive_model_name(model_name: Optional[str], model: Any) -> Optional[str]:
+    def _derive_model_name(model_name: str | None, model: Any) -> str | None:
         if model_name:
             return model_name
         if model is not None:
@@ -83,7 +81,7 @@ class ModelAndTokenizer:
         return None
 
     @staticmethod
-    def _detect_instruct(name: Optional[str]) -> bool:
+    def _detect_instruct(name: str | None) -> bool:
         if not name:
             return False
         return "instruct" in name.lower()
@@ -112,6 +110,5 @@ def _strip_llama_default_metadata(tokenizer: Any) -> None:
         return
 
     lines = template.splitlines(keepends=True)
-    cleaned = [line for line in lines if not any(
-        marker in line for marker in markers)]
+    cleaned = [line for line in lines if not any(marker in line for marker in markers)]
     tokenizer.chat_template = "".join(cleaned)

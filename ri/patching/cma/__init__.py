@@ -7,9 +7,9 @@ from .runner import (
 )
 
 __all__ = [
-    "compute_gold_label_probability",
     "CausalMediationRunner",
     "PatchPositionAnalyzer",
-    "run_cma",
+    "compute_gold_label_probability",
     "main",
+    "run_cma",
 ]

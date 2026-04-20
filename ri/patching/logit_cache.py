@@ -3,8 +3,8 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import shutil
 from dataclasses import dataclass
-from typing import List, Optional
 
 import torch
 
@@ -90,7 +90,7 @@ class LogitCache:
         self,
         src_pos: int,
         device: torch.device,
-    ) -> Optional[torch.Tensor]:
+    ) -> torch.Tensor | None:
         """
         Load cached logits for a source position.
 
@@ -114,7 +114,7 @@ class LogitCache:
         src_pos: int,
         logits: torch.Tensor,
         num_layers: int,
-        target_positions: List[int],
+        target_positions: list[int],
     ) -> None:
         """
         Save logits for a source position.
@@ -143,8 +143,6 @@ class LogitCache:
 
     def clear_cache(self) -> None:
         """Remove all cached files for this configuration."""
-        import shutil
-
         if os.path.exists(self.cache_path):
             shutil.rmtree(self.cache_path)
 

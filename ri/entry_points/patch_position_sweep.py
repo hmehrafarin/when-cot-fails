@@ -4,11 +4,11 @@ import pathlib
 
 from tqdm import tqdm
 
-from ri.common import prepare_batch_data, build_prompt_batch
+from ri.common import build_prompt_batch, prepare_batch_data
 from ri.patching.config import PatchConfig
 from ri.patching.pipeline import get_source_hidden_states
 from ri.patching.runner import PatchRunner
-from ri.utils import render_prompts, make_inputs
+from ri.utils import make_inputs, render_prompts
 from ri.utils.text import prompt_text_from_rendered
 
 
@@ -22,8 +22,7 @@ def _parse_target_positions_arg(raw_value: str | None) -> list[int] | None:
 
     # Allow Fire-style tuple/list strings like "(0, -1)" or "[0,-1]".
     if (
-        (raw.startswith("(") and raw.endswith(")"))
-        or (raw.startswith("[") and raw.endswith("]"))
+        (raw.startswith("(") and raw.endswith(")")) or (raw.startswith("[") and raw.endswith("]"))
     ) and len(raw) >= 2:
         raw = raw[1:-1].strip()
     if not raw:
@@ -31,8 +30,8 @@ def _parse_target_positions_arg(raw_value: str | None) -> list[int] | None:
 
     parsed: list[int] = []
     seen: set[int] = set()
-    for token in raw.split(","):
-        token = token.strip()
+    for raw_token in raw.split(","):
+        token = raw_token.strip()
         if not token:
             continue
         try:
@@ -59,7 +58,7 @@ def _is_complete_result_file(
         return False
 
     try:
-        with open(file_path, "r", encoding="utf-8") as f:
+        with open(file_path, encoding="utf-8") as f:
             payload = json.load(f)
     except (OSError, json.JSONDecodeError):
         return False
@@ -74,9 +73,7 @@ def _is_complete_result_file(
     patch_result = payload.get("patch_result")
     if not isinstance(patch_result, list):
         return False
-    if len(patch_result) != expected_patch_count:
-        return False
-    return True
+    return len(patch_result) == expected_patch_count
 
 
 def _write_json_atomic(file_path: pathlib.Path, payload: dict) -> None:
@@ -88,13 +85,18 @@ def _write_json_atomic(file_path: pathlib.Path, payload: dict) -> None:
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Run patching experiment with source position sweep")
-    parser.add_argument("--sample_idx", type=int, default=0,
-                        help="Index of the sample to process")
-    parser.add_argument("--layer", type=int, default=None,
-                        help="Specific layer to patch (if not set, sweeps all layers)")
-    parser.add_argument("--start_layer", type=int, default=0,
-                        help="Starting layer for sweeping (if layer not set)")
+        description="Run patching experiment with source position sweep"
+    )
+    parser.add_argument("--sample_idx", type=int, default=0, help="Index of the sample to process")
+    parser.add_argument(
+        "--layer",
+        type=int,
+        default=None,
+        help="Specific layer to patch (if not set, sweeps all layers)",
+    )
+    parser.add_argument(
+        "--start_layer", type=int, default=0, help="Starting layer for sweeping (if layer not set)"
+    )
     parser.add_argument(
         "--layer_stride",
         type=int,
@@ -119,14 +121,30 @@ def main():
         default=None,
         help='Comma-separated target positions (e.g. "0,-1"). If set, overrides --target_pos.',
     )
-    parser.add_argument("--output_dir", type=str,
-                        default="patch_pos_sweep_results", help="Directory to save results")
-    parser.add_argument("--patch_from_generation", action="store_true",
-                        default=False, help="Whether to patch from generation")
-    parser.add_argument("--source_dataset", type=str,
-                        default="outputs/single_batch_output_cot.json", help="Path to source dataset")
-    parser.add_argument("--target_dataset", type=str,
-                        default="outputs/single_batch_output_non_cot.json", help="Path to target dataset")
+    parser.add_argument(
+        "--output_dir",
+        type=str,
+        default="patch_pos_sweep_results",
+        help="Directory to save results",
+    )
+    parser.add_argument(
+        "--patch_from_generation",
+        action="store_true",
+        default=False,
+        help="Whether to patch from generation",
+    )
+    parser.add_argument(
+        "--source_dataset",
+        type=str,
+        default="outputs/single_batch_output_cot.json",
+        help="Path to source dataset",
+    )
+    parser.add_argument(
+        "--target_dataset",
+        type=str,
+        default="outputs/single_batch_output_non_cot.json",
+        help="Path to target dataset",
+    )
     parser.add_argument(
         "--source_model_name",
         type=str,
@@ -139,10 +157,15 @@ def main():
         default=None,
         help="Target model name or local model path (defaults to source model).",
     )
-    parser.add_argument("--src_prompt_template", type=str,
-                        default="gsm8k_cot", help="Source prompt template name")
-    parser.add_argument("--tgt_prompt_template", type=str,
-                        default="gsm8k_non_cot", help="Target prompt template name")
+    parser.add_argument(
+        "--src_prompt_template", type=str, default="gsm8k_cot", help="Source prompt template name"
+    )
+    parser.add_argument(
+        "--tgt_prompt_template",
+        type=str,
+        default="gsm8k_non_cot",
+        help="Target prompt template name",
+    )
     parser.add_argument(
         "--resume",
         action="store_true",
@@ -203,12 +226,12 @@ def main():
 
     # 1. Determine source length
     print("Determining source hidden states length...")
-    q, a, batched_input_source = prepare_batch_data(
+    _q, _a, batched_input_source = prepare_batch_data(
         runner.source_data,
         sample_idx,
         1,
         include_importance=False,
-        tokenizer=runner.source_mt.tokenizer
+        tokenizer=runner.source_mt.tokenizer,
     )
 
     source_convos = build_prompt_batch(
@@ -233,7 +256,7 @@ def main():
     )
 
     # Get source HS to find length
-    source_hs, source_ids, source_extracted_answers = get_source_hidden_states(
+    source_hs, _source_ids, source_extracted_answers = get_source_hidden_states(
         runner.source_mt,
         tokenized_source,
         source_prompt_texts,
@@ -247,12 +270,12 @@ def main():
 
     # 2. Determine target length
     print("Determining target prompt length...")
-    q_tgt, a_tgt, batched_input_tgt = prepare_batch_data(
+    _q_tgt, _a_tgt, batched_input_tgt = prepare_batch_data(
         runner.target_data,
         sample_idx,
         1,
         include_importance=False,
-        tokenizer=runner.target_mt.tokenizer
+        tokenizer=runner.target_mt.tokenizer,
     )
 
     target_convos = build_prompt_batch(
@@ -281,11 +304,9 @@ def main():
     # Get source and target details for output
     source_item = runner.source_data[sample_idx]
     target_item = runner.target_data[sample_idx]
-    source_question = source_item.get(
-        "question", source_item.get("Question", ""))
+    source_item.get("question", source_item.get("Question", ""))
     source_answer = source_item.get("answer", source_item.get("Answer", ""))
-    target_question = target_item.get(
-        "question", target_item.get("Question", ""))
+    target_item.get("question", target_item.get("Question", ""))
     target_answer = target_item.get("answer", target_item.get("Answer", ""))
 
     source_generated_answer = ""
@@ -326,19 +347,13 @@ def main():
                 layer_range.sort()
         if target_positions is not None:
             target_pos_range = target_positions
-            print(
-                f"Layer sweep mode: layers={layer_range}, target_positions={target_positions}"
-            )
+            print(f"Layer sweep mode: layers={layer_range}, target_positions={target_positions}")
         elif target_pos is not None:
             target_pos_range = [target_pos]
-            print(
-                f"Layer sweep mode: layers={layer_range}, target_pos={target_pos}"
-            )
+            print(f"Layer sweep mode: layers={layer_range}, target_pos={target_pos}")
         else:
             target_pos_range = None  # Will sweep all target positions
-            print(
-                f"Grid mode: layers={layer_range}, all target positions"
-            )
+            print(f"Grid mode: layers={layer_range}, all target positions")
 
     # Iterate Layers
     for layer_idx in tqdm(layer_range, desc="Layers"):
@@ -346,11 +361,14 @@ def main():
         runner.patch_config.target_layer = layer_idx
 
         # Determine target positions for this layer
-        current_target_positions = target_pos_range if target_pos_range is not None else range(
-            num_target_tokens)
+        current_target_positions = (
+            target_pos_range if target_pos_range is not None else range(num_target_tokens)
+        )
 
         # Iterate Target Positions
-        for tgt_pos in tqdm(current_target_positions, desc=f"Layer {layer_idx} Targets", leave=False):
+        for tgt_pos in tqdm(
+            current_target_positions, desc=f"Layer {layer_idx} Targets", leave=False
+        ):
             file_name = f"layer_{layer_idx + 1}_pos_{tgt_pos}.json"
             file_path = output_path / file_name
 
@@ -377,13 +395,17 @@ def main():
                 # Run single batch
                 batch_res = runner._run_single_batch(sample_idx)
 
-                single_res = {k: v[0] if isinstance(v, list) and len(v) > 0 else None
-                              for k, v in batch_res.items()}
+                single_res = {
+                    k: v[0] if isinstance(v, list) and len(v) > 0 else None
+                    for k, v in batch_res.items()
+                }
 
                 patch_entry = {
                     "pos": src_pos,
                     "patching_token": single_res.get("patch_from", ""),
-                    "generated_text": single_res.get("generated_text", single_res.get("Generated Answer_cot", "")),
+                    "generated_text": single_res.get(
+                        "generated_text", single_res.get("Generated Answer_cot", "")
+                    ),
                 }
                 patch_results.append(patch_entry)
 
@@ -396,7 +418,7 @@ def main():
                 "source_gold_answer": source_answer,
                 "source_generated_answer": source_generated_answer,
                 "target_gold_answer": target_answer,
-                "patch_result": patch_results
+                "patch_result": patch_results,
             }
 
             _write_json_atomic(file_path, final_output)

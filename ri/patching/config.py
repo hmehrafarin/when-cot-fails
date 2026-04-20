@@ -1,14 +1,14 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Literal, Optional, Union
+from typing import Any, Literal
+
 from ri.config.settings import Constants
 
-
 HSSelectionLiteral = Literal["random_k", "early", "mid", "late"]
-HSSelectionMode = Union[HSSelectionLiteral, int]
+HSSelectionMode = HSSelectionLiteral | int
 StepsLiteral = Literal["all", "no_steps"]
-StepsType = Optional[Union[int, StepsLiteral]]
+StepsType = int | StepsLiteral | None
 VALID_HS_SELECTIONS = {"random_k", "early", "mid", "late", "step_wise"}
 MODEL_DIR = Constants.MODEL_OUTPUT_DIR
 
@@ -39,12 +39,12 @@ class PatchConfig:
     max_gen_len: int
     source_layer: int
     target_layer: int
-    patch_position: Optional[int] = None
+    patch_position: int | None = None
     steps: StepsType = None
     hs_selection: HSSelectionMode = -1
-    patching_k: Optional[int] = None
+    patching_k: int | None = None
     include_all_tokens: bool = False
-    gen_cache_dir: Optional[str] = None
+    gen_cache_dir: str | None = None
 
     def __post_init__(self) -> None:
         if self.max_gen_len <= 0:
@@ -60,13 +60,11 @@ class PatchConfig:
             elif normalized == "no_steps":
                 self.steps = "no_steps"
             else:
-                raise ValueError(
-                    "steps must be a positive integer, 'all' or 'no_steps'")
+                raise ValueError("steps must be a positive integer, 'all' or 'no_steps'")
         elif self.steps is None:
             pass
         else:
-            raise ValueError(
-                "steps must be a positive integer, 'all' or 'no_steps'")
+            raise ValueError("steps must be a positive integer, 'all' or 'no_steps'")
 
         self.hs_selection = _normalize_hs_selection(self.hs_selection)
 

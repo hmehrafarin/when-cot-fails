@@ -1,16 +1,14 @@
 from __future__ import annotations
 
-from typing import Dict, List, Optional
-
+from ri.common.prompts import build_prompt_batch
+from ri.utils.extraction import extract_answer_from_generation
 from ri.utils.tokenizer import (
     decode_tokens,
     get_eos_token_ids,
     get_pad_id,
     make_inputs,
 )
-from ri.utils.extraction import extract_answer_from_generation
 
-from ri.common.prompts import build_prompt_batch
 from .config import EvaluationConfig
 
 
@@ -19,7 +17,7 @@ def generate_batch_outputs(
     prompter,
     batched_input,
     config: EvaluationConfig,
-) -> Dict[str, List[str]]:
+) -> dict[str, list[str | None]]:
     """
     Generate answers for a batch of prompts and extract numeric / CoT outputs.
     """
@@ -29,8 +27,7 @@ def generate_batch_outputs(
         steps=config.steps,
     )
 
-    supports_system_prompt = bool(
-        getattr(mt, "is_instruct_model", False))
+    supports_system_prompt = bool(getattr(mt, "is_instruct_model", False))
 
     tokenized_inp = make_inputs(
         mt.tokenizer,
@@ -60,10 +57,7 @@ def generate_batch_outputs(
         template_name=getattr(prompter, "template_name", None),
     )
 
-    rendered_input = [
-        convo[-1]["content"] if convo else ""
-        for convo in convos
-    ]
+    rendered_input = [convo[-1]["content"] if convo else "" for convo in convos]
 
     return {
         "input": rendered_input,

@@ -1,18 +1,18 @@
 from __future__ import annotations
 
 import random
-from typing import Iterable, List, Sequence, Tuple
+from collections.abc import Iterable, Sequence
 
 from .config import HSSelectionMode, StepsType
 
 
-def _answer_line_spans(prompt_text: str) -> List[Tuple[int, int]]:
+def _answer_line_spans(prompt_text: str) -> list[tuple[int, int]]:
     marker = "Answer:"
     idx = prompt_text.find(marker)
     if idx < 0:
         return []
 
-    spans: List[Tuple[int, int]] = []
+    spans: list[tuple[int, int]] = []
     cursor = idx + len(marker)
     tail = prompt_text[cursor:]
     absolute = cursor
@@ -33,7 +33,7 @@ def select_step_positions(
     prompt_text: str,
     tokenizer,
     steps: StepsType,
-) -> List[int]:
+) -> list[int]:
     if not core_positions or not prompt_text:
         return []
 
@@ -73,8 +73,8 @@ def select_step_positions(
     def overlaps(t_start: int, t_end: int, span_start: int, span_end: int) -> bool:
         return t_start < span_end and t_end > span_start
 
-    selected: List[int] = []
-    for pos, offset in zip(positions, offsets):
+    selected: list[int] = []
+    for pos, offset in zip(positions, offsets, strict=False):
         tok_start, tok_end = offset
         if tok_start is None or tok_end is None:
             continue
@@ -93,11 +93,11 @@ def select_positions_with_mode(
     available_positions: Iterable[int],
     k: int,
     mode: HSSelectionMode,
-) -> List[int]:
+) -> list[int]:
     if k <= 0:
         return []
 
-    unique: List[int] = []
+    unique: list[int] = []
     seen = set()
     for pos in available_positions:
         try:
@@ -117,8 +117,7 @@ def select_positions_with_mode(
         length = len(unique)
         if idx < 0:
             idx += length
-        if idx < 0:
-            idx = 0
+        idx = max(idx, 0)
         if idx >= length:
             idx = length - 1
         chosen_idx_val = unique[idx]
@@ -131,7 +130,7 @@ def select_positions_with_mode(
             chosen = unique + [unique[-1]] * (k - len(unique))
     elif mode == "mid":
         start = max((len(unique) - k) // 2, 0)
-        chosen = unique[start:start + k]
+        chosen = unique[start : start + k]
     elif mode == "late":
         chosen = unique[-k:]
     elif mode == "early":

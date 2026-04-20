@@ -1,12 +1,14 @@
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional, Tuple
+import hashlib
+import os
+from typing import Any
 
 import torch
 import torch.nn.functional as F
 
-from ri.core.hooks import remove_hooks, set_patch
 from ri.common.prompts import build_prompt_batch
+from ri.core.hooks import remove_hooks, set_patch
 from ri.patching.config import HSSelectionMode, PatchConfig, StepsType
 from ri.patching.pipeline import _resolve_hidden_state_index, _safe_token_from_id
 from ri.patching.selectors import select_positions_with_mode, select_step_positions
@@ -15,6 +17,8 @@ from ri.patching.tensor_ops import (
     left_pad_offsets,
     mask_to_positions,
 )
+from ri.utils.extraction import extract_answer, extract_answer_from_generation
+from ri.utils.text import prompt_text_from_rendered
 from ri.utils.tokenizer import (
     decode_tokens,
     get_eos_token_ids,
@@ -22,11 +26,9 @@ from ri.utils.tokenizer import (
     make_inputs,
     render_prompts,
 )
-from ri.utils.extraction import extract_answer, extract_answer_from_generation
-from ri.utils.text import prompt_text_from_rendered
 
 
-def normalize_hs_selections(value: Any) -> Optional[List[Any]]:
+def normalize_hs_selections(value: Any) -> list[Any] | None:
     if value is None:
         return None
     if isinstance(value, list):
@@ -34,18 +36,17 @@ def normalize_hs_selections(value: Any) -> Optional[List[Any]]:
     return [value]
 
 
-def extract_question_answer(sample: Dict[str, Any]) -> Dict[str, str]:
+def extract_question_answer(sample: dict[str, Any]) -> dict[str, str]:
     return {
         "question": sample.get("question", sample.get("Question", "")),
         "answer": sample.get("answer", sample.get("Answer", "")),
     }
 
 
-def make_batched_input(sample: Dict[str, Any], *, include_generated: bool) -> List[Dict[str, Any]]:
-    payload: Dict[str, Any] = extract_question_answer(sample)
+def make_batched_input(sample: dict[str, Any], *, include_generated: bool) -> list[dict[str, Any]]:
+    payload: dict[str, Any] = extract_question_answer(sample)
     if include_generated:
-        payload["Generated Answer_num"] = sample.get(
-            "Generated Answer_num", "")
+        payload["Generated Answer_num"] = sample.get("Generated Answer_num", "")
     if "hs_selection" in sample:
         payload["hs_selection"] = sample["hs_selection"]
     return [payload]
@@ -54,13 +55,13 @@ def make_batched_input(sample: Dict[str, Any], *, include_generated: bool) -> Li
 def build_prompt_inputs(
     tokenizer,
     prompter,
-    batched_input: List[Dict[str, Any]],
+    batched_input: list[dict[str, Any]],
     *,
     steps: StepsType,
     device,
     system_prompt: bool,
     add_generation_prompt: bool,
-) -> Tuple[List[Any], List[str], List[str], Dict[str, torch.Tensor]]:
+) -> tuple[list[Any], list[str], list[str], dict[str, torch.Tensor]]:
     convos = build_prompt_batch(
         prompter,
         batched_input,
@@ -102,21 +103,22 @@ def resolve_target_steps(
 
 
 def select_candidates_from_prompt(
-    tokenized_source: Dict[str, torch.Tensor],
-    prompt_texts: List[str],
+    tokenized_source: dict[str, torch.Tensor],
+    prompt_texts: list[str],
     tokenizer,
     *,
     steps: StepsType,
     include_all_tokens: bool,
-) -> List[int]:
-    source_prompt_positions = [
-        mask_to_positions(am) for am in tokenized_source["attention_mask"]
-    ]
+) -> list[int]:
+    source_prompt_positions = [mask_to_positions(am) for am in tokenized_source["attention_mask"]]
 
     source_core_positions, _ = compute_core_token_positions(
-        tokenized_source, prompt_texts, tokenizer,
+        tokenized_source,
+        prompt_texts,
+        tokenizer,
     )
 
+    step_positions: list[list[int]]
     if steps in (None, "no_steps"):
         step_positions = [[]]
     else:
@@ -140,7 +142,7 @@ def select_candidates_from_prompt(
     return candidates
 
 
-def encode_answer_tokens(tokenizer, answer_value: Optional[Any]) -> Tuple[Optional[str], List[int]]:
+def encode_answer_tokens(tokenizer, answer_value: Any | None) -> tuple[str | None, list[int]]:
     if answer_value is None:
         return None, []
     text = str(answer_value).strip()
@@ -150,7 +152,7 @@ def encode_answer_tokens(tokenizer, answer_value: Optional[Any]) -> Tuple[Option
 
 
 def resolve_patch_position(
-    patch_position: Optional[int],
+    patch_position: int | None,
     offset: int,
     valid_len: int,
 ) -> int:
@@ -164,9 +166,9 @@ def resolve_patch_position(
 
 def compute_gold_label_probability(
     logits: torch.Tensor,
-    gold_token_ids: List[int],
+    gold_token_ids: list[int],
     position: int = -1,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Compute probability of gold tokens at given position."""
     # logits: (batch, seq_len, vocab_size)
     pos_logits = logits[:, position, :]  # (batch, vocab_size)
@@ -187,15 +189,15 @@ def compute_gold_label_probability(
 
 def positions_from_generation_mode(
     mode: HSSelectionMode,
-    generated_token_ids: Optional[List[List[int]]],
+    generated_token_ids: list[list[int]] | None,
     tokenizer,
-) -> List[int]:
+) -> list[int]:
     if not generated_token_ids or not isinstance(mode, str):
         return []
 
     tokens = generated_token_ids[0]
     if mode == "step_wise":
-        positions: List[int] = []
+        positions: list[int] = []
         for i, tid in enumerate(tokens):
             if "\n" in tokenizer.decode([tid]) and i > 0:
                 positions.append(i)
@@ -207,23 +209,24 @@ def positions_from_generation_mode(
 
 def resolve_source_positions(
     *,
-    candidates: List[int],
-    generated_token_ids: Optional[List[List[int]]],
-    sample_hs_selections: Optional[List[Any]],
+    candidates: list[int],
+    generated_token_ids: list[list[int]] | None,
+    sample_hs_selections: list[Any] | None,
     hs_selection: HSSelectionMode,
-    patching_k: Optional[int],
+    patching_k: int | None,
     patch_from_generation: bool,
     tokenizer,
-) -> Dict[Any, List[int]]:
+) -> dict[Any, list[int]]:
     positions_to_select = patching_k or 1
-    positions_by_mode: Dict[Any, List[int]] = {}
+    positions_by_mode: dict[Any, list[int]] = {}
 
     if sample_hs_selections is not None:
         for item in sample_hs_selections:
-            mode = int(item) if isinstance(
-                item, str) and item.isdigit() else item
+            mode = int(item) if isinstance(item, str) and item.isdigit() else item
             positions = select_positions_with_mode(
-                candidates, positions_to_select, mode,
+                candidates,
+                positions_to_select,
+                mode,
             )
             if not positions:
                 fill = int(candidates[-1]) if candidates else 0
@@ -231,12 +234,20 @@ def resolve_source_positions(
             positions_by_mode[item] = positions
         return positions_by_mode
 
-    positions = positions_from_generation_mode(
-        hs_selection, generated_token_ids, tokenizer,
-    ) if patch_from_generation else []
+    positions = (
+        positions_from_generation_mode(
+            hs_selection,
+            generated_token_ids,
+            tokenizer,
+        )
+        if patch_from_generation
+        else []
+    )
     if not positions:
         positions = select_positions_with_mode(
-            candidates, positions_to_select, hs_selection,
+            candidates,
+            positions_to_select,
+            hs_selection,
         )
     if not positions:
         fill = int(candidates[-1]) if candidates else 0
@@ -250,37 +261,35 @@ def get_source_hidden_state_at_position(
     patch_from_generation: bool,
     all_source_hs: torch.Tensor,  # (batch, seq_len, hidden_dim)
     hs_pos: int,
-    tokenized_source: Dict[str, torch.Tensor],
-    generated_token_ids: Optional[List[List[int]]],
+    tokenized_source: dict[str, torch.Tensor],
+    generated_token_ids: list[list[int]] | None,
     tokenizer,
-) -> Tuple[torch.Tensor, int, str]:
+) -> tuple[torch.Tensor, int, str]:
     """Extract hidden state at position, returns (hs, safe_pos, token_text)."""
     if patch_from_generation:
         max_gen_pos = all_source_hs.size(1) - 1
-        safe_pos = min(hs_pos, max_gen_pos) if hs_pos >= 0 else max(
-            0, all_source_hs.size(1) + hs_pos)
+        safe_pos = (
+            min(hs_pos, max_gen_pos) if hs_pos >= 0 else max(0, all_source_hs.size(1) + hs_pos)
+        )
         # (batch, 1, hidden_dim)
-        hs_at_pos = all_source_hs[:, safe_pos:safe_pos + 1, :]
+        hs_at_pos = all_source_hs[:, safe_pos : safe_pos + 1, :]
         if generated_token_ids and safe_pos < len(generated_token_ids[0]):
-            token_text = _safe_token_from_id(
-                tokenizer, generated_token_ids[0][safe_pos])
+            token_text = _safe_token_from_id(tokenizer, generated_token_ids[0][safe_pos])
         else:
             token_text = ""
         return hs_at_pos, safe_pos, token_text
 
     seq_len = all_source_hs.size(1)
-    safe_pos = min(hs_pos, seq_len - 1) if hs_pos >= 0 else max(
-        0, seq_len + hs_pos)
-    hs_at_pos = all_source_hs[:, safe_pos:safe_pos + 1, :]
-    token_text = _safe_token_from_id(
-        tokenizer, tokenized_source["input_ids"][0, safe_pos].item())
+    safe_pos = min(hs_pos, seq_len - 1) if hs_pos >= 0 else max(0, seq_len + hs_pos)
+    hs_at_pos = all_source_hs[:, safe_pos : safe_pos + 1, :]
+    token_text = _safe_token_from_id(tokenizer, tokenized_source["input_ids"][0, safe_pos].item())
     return hs_at_pos, safe_pos, token_text
 
 
 def patch_target_logits(
     *,
     model,
-    tokenized_tgt: Dict[str, torch.Tensor],
+    tokenized_tgt: dict[str, torch.Tensor],
     hs_at_pos: torch.Tensor,  # (batch, 1, hidden_dim) - hidden state to inject
     target_layer: int,
     target_position: int,
@@ -296,8 +305,7 @@ def patch_target_logits(
     hooks = set_patch(model, [patch_config_dict])
     try:
         with torch.no_grad():
-            patched_output = model(
-                **tokenized_tgt, output_hidden_states=False)
+            patched_output = model(**tokenized_tgt, output_hidden_states=False)
     finally:
         remove_hooks(hooks)
     return patched_output.logits
@@ -305,36 +313,33 @@ def patch_target_logits(
 
 def get_all_hidden_states_from_forward(
     model,
-    tokenized_source: Dict[str, torch.Tensor],
+    tokenized_source: dict[str, torch.Tensor],
     source_layer: int,
 ) -> torch.Tensor:
     """Get hidden states at source_layer from forward pass.
 
     Returns: tensor of shape (batch, seq_len, hidden_dim)
     """
-    source_outputs = model(
-        **tokenized_source, output_hidden_states=True)
+    source_outputs = model(**tokenized_source, output_hidden_states=True)
     hidden_state_tuple = source_outputs.hidden_states or ()
     if not hidden_state_tuple:
-        raise RuntimeError(
-            "Model did not return hidden states; cannot perform patching.")
+        raise RuntimeError("Model did not return hidden states; cannot perform patching.")
 
-    hs_index = _resolve_hidden_state_index(
-        source_layer, len(hidden_state_tuple))
+    hs_index = _resolve_hidden_state_index(source_layer, len(hidden_state_tuple))
     return hidden_state_tuple[hs_index]
 
 
 def get_all_hidden_states_from_generation(
     model,
     tokenizer,
-    tokenized_source: Dict[str, torch.Tensor],
-    source_prompt_texts: List[str],
+    tokenized_source: dict[str, torch.Tensor],
+    source_prompt_texts: list[str],
     source_layer: int,
     max_gen_len: int,
-    gen_cache_dir: Optional[str] = None,
-    tgt_template_name: Optional[str] = None,
+    gen_cache_dir: str | None = None,
+    tgt_template_name: str | None = None,
     batch_size: int = 1,
-) -> Tuple[torch.Tensor, List[List[int]], List[str]]:
+) -> tuple[torch.Tensor, list[list[int]], list[str]]:
     """Generate from source and collect hidden states at each step.
 
     Returns:
@@ -345,8 +350,6 @@ def get_all_hidden_states_from_generation(
     cached_data = None
 
     if gen_cache_dir:
-        import hashlib
-        import os
         os.makedirs(gen_cache_dir, exist_ok=True)
         prompt_str = "".join(source_prompt_texts)
         model_name = getattr(model, "name_or_path", "unknown_model")
@@ -355,8 +358,7 @@ def get_all_hidden_states_from_generation(
         cache_path = os.path.join(gen_cache_dir, f"gen_cache_{cache_hash}.pt")
         if os.path.exists(cache_path):
             try:
-                cached_data = torch.load(
-                    cache_path, map_location=model.device)
+                cached_data = torch.load(cache_path, map_location=model.device)
             except Exception as e:
                 print(f"Warning: Failed to load cache {cache_path}: {e}")
 
@@ -379,21 +381,20 @@ def get_all_hidden_states_from_generation(
         )
         output = decode_tokens(tokenizer, generation.sequences)
         source_extracted_answers = extract_answer_from_generation(
-            output, tokenizer=tokenizer,
+            output,
+            tokenizer=tokenizer,
             template_name=tgt_template_name,
         )
 
         hidden_steps = generation.hidden_states or ()
         if not hidden_steps:
-            raise RuntimeError(
-                "Model did not return hidden states during generation.")
+            raise RuntimeError("Model did not return hidden states during generation.")
 
         per_step_hs = []
         for step_hidden in hidden_steps:
             if step_hidden is None:
                 continue
-            hs_index = _resolve_hidden_state_index(
-                source_layer, len(step_hidden))
+            hs_index = _resolve_hidden_state_index(source_layer, len(step_hidden))
             layer_hidden = step_hidden[hs_index]
             if layer_hidden.dim() == 3 and layer_hidden.size(1) == 1:
                 per_step_hs.append(layer_hidden[:, 0, :])
@@ -401,8 +402,7 @@ def get_all_hidden_states_from_generation(
                 per_step_hs.append(layer_hidden[:, -1, :])
 
         if not per_step_hs:
-            raise RuntimeError(
-                "Generation produced no hidden states to select from.")
+            raise RuntimeError("Generation produced no hidden states to select from.")
 
         # Stack per-step hidden states: (batch, num_steps, hidden_dim)
         gen_hs_tensor = torch.stack(per_step_hs, dim=1)
@@ -411,8 +411,7 @@ def get_all_hidden_states_from_generation(
         input_len = tokenized_source["input_ids"].shape[1]
 
         generated_token_ids = []
-        current_eos_ids = [source_eos_ids] if isinstance(
-            source_eos_ids, int) else source_eos_ids
+        current_eos_ids = [source_eos_ids] if isinstance(source_eos_ids, int) else source_eos_ids
         for i in range(gen_hs_tensor.size(0)):
             gen_seq = sequences[i, input_len:]
             valid_len = len(gen_seq)
@@ -421,27 +420,25 @@ def get_all_hidden_states_from_generation(
                 if len(matches) > 0:
                     valid_len = min(valid_len, matches[0].item() + 1)
             valid_len = min(valid_len, num_gen_steps)
-            generated_token_ids.append(
-                [int(tok) for tok in gen_seq[:valid_len].tolist()])
+            generated_token_ids.append([int(tok) for tok in gen_seq[:valid_len].tolist()])
 
         if gen_cache_dir:
-            import hashlib
-            import os
             prompt_str = "".join(source_prompt_texts)
             model_name = getattr(model, "name_or_path", "unknown_model")
             cache_key_str = f"{prompt_str}_{source_layer}_{max_gen_len}_{model_name}_{batch_size}"
             cache_hash = hashlib.md5(cache_key_str.encode("utf-8")).hexdigest()
-            cache_path = os.path.join(
-                gen_cache_dir, f"gen_cache_{cache_hash}.pt")
+            cache_path = os.path.join(gen_cache_dir, f"gen_cache_{cache_hash}.pt")
 
-            torch.save({
-                "gen_hs_tensor": gen_hs_tensor,
-                "generated_token_ids": generated_token_ids,
-                "source_extracted_answers": source_extracted_answers
-            }, cache_path)
+            torch.save(
+                {
+                    "gen_hs_tensor": gen_hs_tensor,
+                    "generated_token_ids": generated_token_ids,
+                    "source_extracted_answers": source_extracted_answers,
+                },
+                cache_path,
+            )
 
-    source_generated_answer = source_extracted_answers.get(
-        "answer_text", [])
+    source_generated_answer = source_extracted_answers.get("answer_text", [])
     return gen_hs_tensor, generated_token_ids, source_generated_answer
 
 
@@ -458,42 +455,35 @@ def analyze_patch_positions(
     patch_from_generation: bool,
     sample_idx: int,
     batch_size: int = 1,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     cfg = config
     source_tokenizer = source_mt.tokenizer
     target_tokenizer = target_mt.tokenizer
-    target_supports_system_prompt = bool(
-        getattr(target_mt, "is_instruct_model", False)
-    )
+    target_supports_system_prompt = bool(getattr(target_mt, "is_instruct_model", False))
 
     # Assuming batch size 1
     source_sample = batched_input_source[0]
-    target_sample = batched_input_tgt[0]
+    batched_input_tgt[0]
 
-    sample_hs_selections = normalize_hs_selections(
-        source_sample.get("hs_selection")
-    )
+    sample_hs_selections = normalize_hs_selections(source_sample.get("hs_selection"))
 
-    _, rendered_source_prompts, source_prompt_texts, tokenized_source = (
-        build_prompt_inputs(
-            source_tokenizer,
-            src_prompter,
-            batched_input_source,
-            steps=cfg.steps,
-            device=source_mt.device,
-            system_prompt=True,
-            add_generation_prompt=True,
-        )
+    _, rendered_source_prompts, source_prompt_texts, tokenized_source = build_prompt_inputs(
+        source_tokenizer,
+        src_prompter,
+        batched_input_source,
+        steps=cfg.steps,
+        device=source_mt.device,
+        system_prompt=True,
+        add_generation_prompt=True,
     )
 
     # source_pad_id = get_pad_id(source_tokenizer)
     # source_eos_ids = get_eos_token_ids(source_tokenizer)
 
-    source_generated_answer = None
     generated_token_ids = None
 
     if patch_from_generation:
-        all_source_hs, generated_token_ids, source_generated_answer = (
+        all_source_hs, generated_token_ids, _source_generated_answer = (
             get_all_hidden_states_from_generation(
                 source_mt.model,
                 source_tokenizer,
@@ -506,9 +496,7 @@ def analyze_patch_positions(
                 batch_size=batch_size,
             )
         )
-        candidates = list(
-            range(len(generated_token_ids[0]))
-        ) if generated_token_ids else []
+        candidates = list(range(len(generated_token_ids[0]))) if generated_token_ids else []
     else:
         all_source_hs = get_all_hidden_states_from_forward(
             source_mt.model,
@@ -533,22 +521,21 @@ def analyze_patch_positions(
         tokenizer=source_tokenizer,
     )
 
-    tgt_template_name = getattr(
-        tgt_prompter, "template_name", "unknown")
+    tgt_template_name = getattr(tgt_prompter, "template_name", "unknown")
     tgt_steps = resolve_target_steps(
-        cfg.steps, tgt_template_name, gold_step,
+        cfg.steps,
+        tgt_template_name,
+        gold_step,
     )
 
-    _, rendered_tgt_prompts, _, tokenized_tgt = (
-        build_prompt_inputs(
-            target_tokenizer,
-            tgt_prompter,
-            batched_input_tgt,
-            steps=tgt_steps,
-            device=target_mt.device,
-            system_prompt=target_supports_system_prompt,
-            add_generation_prompt=target_supports_system_prompt,
-        )
+    _, rendered_tgt_prompts, _, tokenized_tgt = build_prompt_inputs(
+        target_tokenizer,
+        tgt_prompter,
+        batched_input_tgt,
+        steps=tgt_steps,
+        device=target_mt.device,
+        system_prompt=target_supports_system_prompt,
+        add_generation_prompt=target_supports_system_prompt,
     )
 
     tgt_offsets = left_pad_offsets(tokenized_tgt)
@@ -558,15 +545,12 @@ def analyze_patch_positions(
     gold_answer = batched_input_tgt[0].get("answer", "")
     gold_numeric = extract_answer([gold_answer])
     gold_label_str = str(gold_numeric[0]).strip() if gold_numeric else ""
-    gold_token_ids = target_tokenizer.encode(
-        gold_label_str, add_special_tokens=False)
+    gold_token_ids = target_tokenizer.encode(gold_label_str, add_special_tokens=False)
 
-    source_generated_answer_num = batched_input_source[0].get(
-        "Generated Answer_num", None)
-    source_answer_num_str, source_answer_num_token_ids = (
-        encode_answer_tokens(
-            target_tokenizer, source_generated_answer_num,
-        )
+    source_generated_answer_num = batched_input_source[0].get("Generated Answer_num", None)
+    source_answer_num_str, source_answer_num_token_ids = encode_answer_tokens(
+        target_tokenizer,
+        source_generated_answer_num,
     )
 
     target_pad_id = get_pad_id(target_tokenizer)
@@ -579,59 +563,56 @@ def analyze_patch_positions(
             pad_token_id=target_pad_id,
             do_sample=False,
         )
-    target_baseline_text = decode_tokens(
-        target_tokenizer, target_baseline_gen)
+    target_baseline_text = decode_tokens(target_tokenizer, target_baseline_gen)
     target_baseline_extracted = extract_answer_from_generation(
-        target_baseline_text, tokenizer=target_tokenizer,
+        target_baseline_text,
+        tokenizer=target_tokenizer,
         template_name=getattr(tgt_prompter, "template_name", None),
     )
-    target_baseline_answer_num = target_baseline_extracted["answer_num"][0] \
-        if target_baseline_extracted["answer_num"] else None
-    target_answer_num_str, target_answer_num_token_ids = (
-        encode_answer_tokens(
-            target_tokenizer, target_baseline_answer_num,
-        )
+    target_baseline_answer_num = (
+        target_baseline_extracted["answer_num"][0]
+        if target_baseline_extracted["answer_num"]
+        else None
+    )
+    target_answer_num_str, target_answer_num_token_ids = encode_answer_tokens(
+        target_tokenizer,
+        target_baseline_answer_num,
     )
 
     with torch.no_grad():
-        baseline_output = target_mt.model(
-            **tokenized_tgt, output_hidden_states=False)
+        baseline_output = target_mt.model(**tokenized_tgt, output_hidden_states=False)
     baseline_logits = baseline_output.logits
 
-    gold_baseline_probs = compute_gold_label_probability(
-        baseline_logits, gold_token_ids)
+    gold_baseline_probs = compute_gold_label_probability(baseline_logits, gold_token_ids)
     source_answer_baseline_probs = (
-        compute_gold_label_probability(
-            baseline_logits, source_answer_num_token_ids)
+        compute_gold_label_probability(baseline_logits, source_answer_num_token_ids)
         if source_answer_num_token_ids
         else None
     )
     target_answer_baseline_probs = (
-        compute_gold_label_probability(
-            baseline_logits, target_answer_num_token_ids)
+        compute_gold_label_probability(baseline_logits, target_answer_num_token_ids)
         if target_answer_num_token_ids
         else None
     )
 
     actual_tgt_pos = resolve_patch_position(
-        cfg.patch_position, tgt_offsets[0], valid_len,
+        cfg.patch_position,
+        tgt_offsets[0],
+        valid_len,
     )
 
-    patch_token = _safe_token_from_id(
-        target_tokenizer, tokenized_tgt["input_ids"][0, actual_tgt_pos].item())
+    _safe_token_from_id(target_tokenizer, tokenized_tgt["input_ids"][0, actual_tgt_pos].item())
 
     results_list = []
-    for mode, positions in source_hs_positions_by_mode.items():
+    for positions in source_hs_positions_by_mode.values():
         for hs_pos in positions:
-            hs_at_pos, safe_pos, source_token_text = (
-                get_source_hidden_state_at_position(
-                    patch_from_generation=patch_from_generation,
-                    all_source_hs=all_source_hs,
-                    hs_pos=hs_pos,
-                    tokenized_source=tokenized_source,
-                    generated_token_ids=generated_token_ids,
-                    tokenizer=source_tokenizer,
-                )
+            hs_at_pos, safe_pos, source_token_text = get_source_hidden_state_at_position(
+                patch_from_generation=patch_from_generation,
+                all_source_hs=all_source_hs,
+                hs_pos=hs_pos,
+                tokenized_source=tokenized_source,
+                generated_token_ids=generated_token_ids,
+                tokenizer=source_tokenizer,
             )
             patched_logits = patch_target_logits(
                 model=target_mt.model,
@@ -641,41 +622,43 @@ def analyze_patch_positions(
                 target_position=actual_tgt_pos,
             )
 
-            gold_patched_probs = compute_gold_label_probability(
-                patched_logits, gold_token_ids)
+            gold_patched_probs = compute_gold_label_probability(patched_logits, gold_token_ids)
             source_answer_patched_probs = (
-                compute_gold_label_probability(
-                    patched_logits, source_answer_num_token_ids)
+                compute_gold_label_probability(patched_logits, source_answer_num_token_ids)
                 if source_answer_num_token_ids
                 else None
             )
             target_answer_patched_probs = (
-                compute_gold_label_probability(
-                    patched_logits, target_answer_num_token_ids)
+                compute_gold_label_probability(patched_logits, target_answer_num_token_ids)
                 if target_answer_num_token_ids
                 else None
             )
 
-            gold_prob_change = gold_patched_probs["sum_prob"] - \
-                gold_baseline_probs["sum_prob"]
+            gold_prob_change = gold_patched_probs["sum_prob"] - gold_baseline_probs["sum_prob"]
 
             source_prob_change = None
             if source_answer_patched_probs and source_answer_baseline_probs:
-                source_prob_change = source_answer_patched_probs["sum_prob"] - \
-                    source_answer_baseline_probs["sum_prob"]
+                source_prob_change = (
+                    source_answer_patched_probs["sum_prob"]
+                    - source_answer_baseline_probs["sum_prob"]
+                )
 
             target_prob_change = None
             if target_answer_patched_probs and target_answer_baseline_probs:
-                target_prob_change = target_answer_patched_probs["sum_prob"] - \
-                    target_answer_baseline_probs["sum_prob"]
+                target_prob_change = (
+                    target_answer_patched_probs["sum_prob"]
+                    - target_answer_baseline_probs["sum_prob"]
+                )
 
-            results_list.append({
-                "position": safe_pos,
-                "patching_token": source_token_text,
-                "gold_prob_change": gold_prob_change,
-                "source_prob_change": source_prob_change,
-                "target_prob_change": target_prob_change,
-            })
+            results_list.append(
+                {
+                    "position": safe_pos,
+                    "patching_token": source_token_text,
+                    "gold_prob_change": gold_prob_change,
+                    "source_prob_change": source_prob_change,
+                    "target_prob_change": target_prob_change,
+                }
+            )
 
     final_output = {
         "question": batched_input_tgt[0]["question"],
@@ -684,11 +667,15 @@ def analyze_patch_positions(
         "target_answer_num": target_answer_num_str,
         "gold_answer": gold_label_str,
         "gold_answer_prob": gold_baseline_probs["sum_prob"],
-        "target_answer_prob": target_answer_baseline_probs["sum_prob"] if target_answer_baseline_probs else None,
-        "source_answer_prob": source_answer_baseline_probs["sum_prob"] if source_answer_baseline_probs else None,
+        "target_answer_prob": target_answer_baseline_probs["sum_prob"]
+        if target_answer_baseline_probs
+        else None,
+        "source_answer_prob": source_answer_baseline_probs["sum_prob"]
+        if source_answer_baseline_probs
+        else None,
         "source_prompt": rendered_source_prompts[0] if rendered_source_prompts else "",
         "target_prompt": rendered_tgt_prompts[0] if rendered_tgt_prompts else "",
-        "results": results_list
+        "results": results_list,
     }
 
     return final_output

@@ -4,10 +4,10 @@ import json
 import os
 import re
 from decimal import Decimal, InvalidOperation
-from typing import Any, Optional
+from typing import Any
 
 
-def normalize_numeric(value: Any) -> Optional[Decimal]:
+def normalize_numeric(value: Any) -> Decimal | None:
     """
     Strip punctuation and convert to Decimal.
     Returns None if the value is missing or not a number.
@@ -33,7 +33,7 @@ def main() -> None:
     parser.add_argument("json_file", help="Path to the predictions JSON file")
     args = parser.parse_args()
 
-    with open(args.json_file, "r", encoding="utf-8") as f:
+    with open(args.json_file, encoding="utf-8") as f:
         data = json.load(f)
 
     wrong = []

@@ -1,4 +1,4 @@
-# reasoning-interpretability
+# when-cot-fails
 
 Toolkit for hidden-state patching experiments on reasoning models. Patches activations from a source model (with CoT) into a target model (without CoT) to measure how reasoning representations transfer across layers and token positions.
 
@@ -12,11 +12,34 @@ uv sync
 
 This creates a virtual environment in `.venv/` and installs the project in editable mode.
 
-Run commands via `uv run` (e.g. `uv run ri ...`), or activate the environment with `source .venv/bin/activate`.
+Run commands via `uv run` (e.g. `uv run python -m ri.main ...`), or activate the environment with `source .venv/bin/activate`.
 
-Requires Python 3.9+, PyTorch, and Transformers.
+Requires Python 3.10+, PyTorch, and Transformers.
 
 ## Configuration
+
+All experiments are driven through [Hydra](https://hydra.cc/) configs composed from `ri/conf/`:
+
+```
+ri/conf/
+├── config.yaml          # root — picks one task / model / dataset / tracking
+├── task/                # evaluate, patch, cma, pe_analysis, patch_position_sweep
+├── model/               # llama_8b, qwen_7b
+├── dataset/             # gsm8k
+└── tracking/            # disabled, wandb
+```
+
+The entrypoint is `ri/main.py`. Override any value from the CLI with dotted paths:
+
+```bash
+uv run python -m ri.main \
+    task=patch \
+    model=qwen_7b \
+    task.source_layer=15 task.target_layer=15 \
+    task.patch_from_generation=true
+```
+
+Pydantic v2 validates each config when it is constructed, so invalid values fail loudly at the start of a run.
 
 ### Environment variables
 
@@ -33,8 +56,8 @@ Standard HuggingFace variables (`TRANSFORMERS_CACHE`, `HF_HOME`, `HUGGINGFACE_HU
 
 Generation hidden states and logits are cached to disk by default to speed up reruns.
 
-- **Generation cache** — hidden states from source model forward passes are saved as `.pt` files in `RI_OUTPUT_DIR`. Controlled via `--gen_cache_dir` on `run_patch_grid`.
-- **Logit cache** — per-source-position logits for PE analysis are saved under `$PROJECTDIR/patch_logits/`. Controlled via `--cache_logits` (default: true) and `--logit_cache_dir` on `pe_analysis`. Set `--cache_logits=false` to disable.
+- **Generation cache** — hidden states from source model forward passes are saved as `.pt` files in `RI_OUTPUT_DIR`. Controlled via `task.gen_cache_dir` on the `patch` task.
+- **Logit cache** — per-source-position logits for PE analysis are saved under `$PROJECTDIR/patch_logits/`. Controlled via `task.cache_logits` (default: true) and `task.logit_cache_dir` on the `pe_analysis` task. Set `task.cache_logits=false` to disable.
 
 To clear cached data, delete the relevant directories.
 
@@ -42,124 +65,97 @@ To clear cached data, delete the relevant directories.
 
 ### Step 1: Generate model outputs
 
-Before running any patching experiment, you need to evaluate your model on GSM-8K to produce the output files that patching and PE analysis consume. Run the model with CoT and without CoT prompts separately:
-
 ```bash
-# Generate CoT outputs
-ri evaluate \
-    --model_name meta-llama/Llama-3.1-8B-Instruct \
-    --dataset gsm8k \
-    --prompt_template gsm8k_cot \
-    --batch_size 1 --max_gen_len 400 --seed 42 \
-    --output_file outputs/single_batch_output_cot.json
+# CoT outputs
+uv run python -m ri.main task=evaluate \
+    dataset.src_prompt_template=gsm8k_cot \
+    task.batch_size=1 task.max_gen_len=400 \
+    task.output_file=outputs/single_batch_output_cot.json
 
-# Generate non-CoT outputs
-ri evaluate \
-    --model_name meta-llama/Llama-3.1-8B-Instruct \
-    --dataset gsm8k \
-    --prompt_template gsm8k_non_cot \
-    --batch_size 1 --max_gen_len 400 --seed 42 \
-    --output_file outputs/single_batch_output_non_cot.json
+# non-CoT outputs
+uv run python -m ri.main task=evaluate \
+    dataset.src_prompt_template=gsm8k_non_cot \
+    task.batch_size=1 task.max_gen_len=400 \
+    task.output_file=outputs/single_batch_output_non_cot.json
 ```
 
-**Note:** Batch size > 1 is not yet supported for patching experiments. Use `--batch_size 1`.
-
-These output JSON files are then passed as `--source_dataset` and `--target_dataset` to the patching scripts below.
+**Note:** Batch size > 1 is not yet supported for patching experiments. Use `task.batch_size=1`.
 
 ### Step 2: Run patching experiments
 
-There are two experiment scripts for full reproducibility, plus a CLI for standalone runs.
+Both `patch_position_sweep` and `pe_analysis` operate on a single sample (`task.sample_idx`) and sweep across layers and target positions.
 
-Both `patch_position_sweep` and `pe_analysis` operate on a single sample (`--sample_idx`) and sweep across all layers and all target positions. For running patching across all samples at a fixed layer and position, use `run_patch_grid` (see below).
-
-### Patch position sweep
-
-Sweeps over source positions, target positions, and layers for one sample. For each combination, patches a single source CoT hidden state (with ```---patch_from_generation```) into the target model and saves the generated output.
+#### Patch position sweep
 
 ```bash
-python -m ri.entry_points.patch_position_sweep \
-    --source_dataset ri/single_batch_output_cot.json \
-    --target_dataset ri/single_batch_output_cot.json \
-    --source_model_name meta-llama/Llama-3.1-8B-Instruct \
-    --src_prompt_template gsm8k_cot \
-    --tgt_prompt_template gsm8k_non_cot \
-    --sample_idx 0 \
-    --patch_from_generation \
-    --output_dir patch_pos_sweep_results
+uv run python -m ri.main task=patch_position_sweep \
+    dataset.source_dataset=outputs/single_batch_output_cot.json \
+    dataset.target_dataset=outputs/single_batch_output_cot.json \
+    task.sample_idx=0 \
+    task.patch_from_generation=true \
+    task.output_dir=patch_pos_sweep_results
 ```
 
-Key arguments:
-- `--layer` — patch a specific layer (otherwise sweeps all layers)
-- `--start_layer`, `--layer_stride` — control layer sweep range
-- `--target_pos` — patch at a specific target position (otherwise sweeps all)
-- `--target_positions` — comma-separated list of target positions (e.g. `"0,-1"`)
-- `--patch_from_generation` — extract source hidden states from generation rather than the prompt
-- `--resume` — skip completed output files
+#### Patch effect (PE) analysis
 
-### Patch effect (PE) analysis
+```bash
+uv run python -m ri.main task=pe_analysis \
+    dataset.source_dataset=outputs/single_batch_output_cot.json \
+    dataset.target_dataset=outputs/single_batch_output_cot.json \
+    task.sample_idx=0 \
+    task.output_dir=pe_output
+```
 
-Computes the patch effect metric across all layers and target positions for one sample. For each source token position, patches its hidden state from every layer into every target position and measures how the target model's output probability distribution changes.
-
-The patch effect is defined as:
+The PE metric is:
 
 ```
 PE = (before_patch_target_prob - after_patch_target_prob) / max(after_patch_target_prob, 1e-10)
 ```
 
+#### Single-run patching
+
 ```bash
-python -m ri.entry_points.pe_analysis \
-    --source_dataset ri/single_batch_output_cot.json \
-    --target_dataset ri/single_batch_output_cot.json \
-    --source_model_name meta-llama/Llama-3.1-8B-Instruct \
-    --sample_idx 0 \
-    --output_dir pe_output
+uv run python -m ri.main task=patch \
+    task.source_layer=15 task.target_layer=15 \
+    task.patch_from_generation=true \
+    task.output_file=output_patched.json
 ```
 
-Key arguments:
-- `--start_src_pos` — starting source position (supports negative indexing)
-- `--target_positions` — comma-separated target positions (e.g. `"0,-1"`)
-- `--cache_logits` — cache logits to disk for reuse across runs (default: true)
-- `--resume` — skip completed source position files
-
-### CLI for standalone experiments
-
-The `ri` CLI provides subcommands for generation, patching, and causal mediation analysis without needing the full sweep scripts.
+#### Causal mediation analysis
 
 ```bash
-# Generate model outputs
-ri evaluate \
-    --model_name meta-llama/Llama-3.1-8B-Instruct \
-    --dataset ri/single_batch_output_cot.json \
-    --prompt_template gsm8k_cot \
-    --batch_size 1 --max_gen_len 400 --seed 42 \
-    --output_file output.json
+uv run python -m ri.main task=cma \
+    task.source_layer=25 task.target_layer=25 \
+    task.output_file=patch_position_analysis.json
+```
 
-# Single patching run
-ri patch \
-    --model_name meta-llama/Llama-3.1-8B-Instruct \
-    --source_dataset ri/single_batch_output_cot.json \
-    --target_dataset ri/single_batch_output_cot.json \
-    --src_prompt_template gsm8k_cot \
-    --tgt_prompt_template gsm8k_non_cot \
-    --source_layer 15 --target_layer 15 \
-    --patch_from_generation \
-    --output_file output_patched.json
+### Grid sweeps (`--multirun`)
 
-# Causal mediation analysis
-ri cma \
-    --model_name meta-llama/Llama-3.1-8B-Instruct \
-    --source_dataset ri/single_batch_output_cot.json \
-    --target_dataset ri/single_batch_output_cot.json \
-    --source_layer 25 --target_layer 25 \
-    --output_file patch_position_analysis.json
+Hydra's native `--multirun` (`-m`) replaces the old `ri-patch-grid` script. Sweep over any combination of fields by passing comma-separated values:
+
+```bash
+uv run python -m ri.main -m task=patch \
+    task.source_layer=0,4,8,12,16,20,24,28 \
+    task.target_layer=0,4,8,12,16,20,24,28 \
+    task.patching_k=1,3,5
+```
+
+Each run writes to a unique subdirectory under `multirun/<date>/<time>/<job>`. Range syntax is also supported:
+
+```bash
+uv run python -m ri.main -m task=patch \
+    'task.source_layer=range(0,32)' \
+    'task.target_layer=range(0,32)'
 ```
 
 ## Project structure
 
+- `ri/main.py` — Hydra entrypoint with task dispatch
+- `ri/conf/` — YAML config tree (task/model/dataset/tracking)
+- `ri/settings/` — module-level environment/path constants
 - `ri/core/` — model loading and forward hook infrastructure
-- `ri/patching/` — patching pipeline, configuration, and tensor operations
+- `ri/patching/` — patching pipeline, Pydantic config, and tensor operations
 - `ri/patching/cma/` — causal mediation analysis
 - `ri/prompts/` — prompt templates and construction
-- `ri/evaluation/` — generation and evaluation
-- `ri/entry_points/` — experiment scripts (`patch_position_sweep`, `pe_analysis`, `run_patch_grid`)
+- `ri/evaluation/` — generation and evaluation runner
 - `ri/utils/` — tokenizer helpers, answer extraction

@@ -93,7 +93,7 @@ def main(cfg: DictConfig) -> None:
         )
 
     elif task == "pe_analysis":
-        from ri.entry_points.pe_analysis import run_pe_analysis
+        from ri.patching.pe_analysis import run_pe_analysis
 
         target_positions = cfg.task.target_positions
         if isinstance(target_positions, (list, tuple)) and target_positions:
@@ -120,7 +120,7 @@ def main(cfg: DictConfig) -> None:
         )
 
     elif task == "patch_position_sweep":
-        from ri.entry_points.patch_position_sweep import run as run_patch_position_sweep
+        from ri.patching.patch_position_sweep import run as run_patch_position_sweep
 
         run_patch_position_sweep(
             sample_idx=cfg.task.sample_idx,

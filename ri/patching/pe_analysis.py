@@ -5,7 +5,6 @@ import os
 import traceback
 from typing import Any
 
-import fire
 import torch
 import torch.nn.functional as F
 from tqdm import tqdm
@@ -655,7 +654,3 @@ def run_pe_analysis(
         sample_idx=sample_idx,
         output_dir=output_dir,
     )
-
-
-if __name__ == "__main__":
-    fire.Fire(run_pe_analysis)

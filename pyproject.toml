@@ -18,7 +18,6 @@ dependencies = [
   "pandas",
   "numpy",
   "torch",
-  "fire",
   "hf-transfer",
   "tqdm",
   "pydantic>=2.13.2",
@@ -27,8 +26,7 @@ dependencies = [
 ]
 
 [project.scripts]
-ri = "ri.cli:cli"
-ri-patch-grid = "ri.entry_points.run_patch_grid:run"
+ri = "ri.main:main"
 
 [tool.setuptools]
 include-package-data = true

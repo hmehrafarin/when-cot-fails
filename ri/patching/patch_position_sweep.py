@@ -1,4 +1,3 @@
-import argparse
 import json
 import pathlib
 
@@ -81,116 +80,6 @@ def _write_json_atomic(file_path: pathlib.Path, payload: dict) -> None:
     with open(tmp_path, "w", encoding="utf-8") as f:
         json.dump(payload, f, indent=2)
     tmp_path.replace(file_path)
-
-
-def main():
-    parser = argparse.ArgumentParser(
-        description="Run patching experiment with source position sweep"
-    )
-    parser.add_argument("--sample_idx", type=int, default=0, help="Index of the sample to process")
-    parser.add_argument(
-        "--layer",
-        type=int,
-        default=None,
-        help="Specific layer to patch (if not set, sweeps all layers)",
-    )
-    parser.add_argument(
-        "--start_layer", type=int, default=0, help="Starting layer for sweeping (if layer not set)"
-    )
-    parser.add_argument(
-        "--layer_stride",
-        type=int,
-        default=1,
-        help="Stride for layer sweep when --layer is not set (e.g. 2 runs every other layer).",
-    )
-    parser.add_argument(
-        "--include_final_layer",
-        action="store_true",
-        default=False,
-        help="Ensure the final model layer is included in a layer sweep even if it does not match stride.",
-    )
-    parser.add_argument(
-        "--target_pos",
-        type=int,
-        default=None,
-        help="Specific target position to patch. Supports negative indexing (e.g. -1 is last token). If not set, sweeps all positions.",
-    )
-    parser.add_argument(
-        "--target_positions",
-        type=str,
-        default=None,
-        help='Comma-separated target positions (e.g. "0,-1"). If set, overrides --target_pos.',
-    )
-    parser.add_argument(
-        "--output_dir",
-        type=str,
-        default="patch_pos_sweep_results",
-        help="Directory to save results",
-    )
-    parser.add_argument(
-        "--patch_from_generation",
-        action="store_true",
-        default=False,
-        help="Whether to patch from generation",
-    )
-    parser.add_argument(
-        "--source_dataset",
-        type=str,
-        default="outputs/single_batch_output_cot.json",
-        help="Path to source dataset",
-    )
-    parser.add_argument(
-        "--target_dataset",
-        type=str,
-        default="outputs/single_batch_output_non_cot.json",
-        help="Path to target dataset",
-    )
-    parser.add_argument(
-        "--source_model_name",
-        type=str,
-        default="meta-llama/Llama-3.1-8B-Instruct",
-        help="Source model name or local model path.",
-    )
-    parser.add_argument(
-        "--target_model_name",
-        type=str,
-        default=None,
-        help="Target model name or local model path (defaults to source model).",
-    )
-    parser.add_argument(
-        "--src_prompt_template", type=str, default="gsm8k_cot", help="Source prompt template name"
-    )
-    parser.add_argument(
-        "--tgt_prompt_template",
-        type=str,
-        default="gsm8k_non_cot",
-        help="Target prompt template name",
-    )
-    parser.add_argument(
-        "--resume",
-        action="store_true",
-        default=False,
-        help="Skip completed output files and only compute missing/incomplete ones.",
-    )
-    args = parser.parse_args()
-    run(
-        sample_idx=args.sample_idx,
-        layer=args.layer,
-        start_layer=args.start_layer,
-        layer_stride=args.layer_stride,
-        include_final_layer=args.include_final_layer,
-        target_pos=args.target_pos,
-        target_positions=_parse_target_positions_arg(args.target_positions),
-        output_dir=args.output_dir,
-        patch_from_generation=args.patch_from_generation,
-        source_dataset=args.source_dataset,
-        target_dataset=args.target_dataset,
-        source_model_name=args.source_model_name,
-        target_model_name=args.target_model_name,
-        src_prompt_template=args.src_prompt_template,
-        tgt_prompt_template=args.tgt_prompt_template,
-        resume=args.resume,
-    )
 
 
 def run(
@@ -445,7 +334,3 @@ def run(
             _write_json_atomic(file_path, final_output)
 
     print("Done.")
-
-
-if __name__ == "__main__":
-    main()

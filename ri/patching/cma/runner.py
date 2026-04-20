@@ -3,11 +3,13 @@ from __future__ import annotations
 import json
 from typing import Any
 
+import pandas as pd
 from tqdm import tqdm
 
 from ri.patching.config import HSSelectionMode, PatchConfig, StepsType
 from ri.patching.runner import PatchRunner
 from ri.settings import DEFAULT_MODEL_NAME
+from ri.tracking import ExperimentTracker
 
 from . import pipeline as cma_pipeline
 
@@ -92,6 +94,7 @@ class CausalMediationRunner(PatchRunner):
     def run(
         self,
         output_file: str = "patch_position_analysis.json",
+        tracker: ExperimentTracker | None = None,
     ) -> None:
         total_samples = min(len(self.source_data), len(self.target_data))
         all_results = []
@@ -107,6 +110,17 @@ class CausalMediationRunner(PatchRunner):
         with open(output_file, "w") as f:
             json.dump(all_results, f, indent=2, default=str)
         print(f"Results saved to {output_file}")
+
+        if tracker is not None and tracker.is_enabled:
+            tracker.log_config(self.config)
+            tracker.log_dataframe("cma_results", pd.DataFrame(all_results))
+            tracker.log_metrics(
+                {
+                    "n_samples": total_samples,
+                    "source_layer": self.config.source_layer,
+                    "target_layer": self.config.target_layer,
+                }
+            )
 
 
 class PatchPositionAnalyzer(CausalMediationRunner):
@@ -134,6 +148,7 @@ def run_cma(
     max_gen_len: int = 400,
     patch_position: int | None = None,
     output_file: str = "patch_position_analysis.json",
+    tracker: ExperimentTracker | None = None,
 ) -> None:
     resolved_source_model = source_model_name or model_name
     resolved_target_model = target_model_name or resolved_source_model
@@ -163,7 +178,7 @@ def run_cma(
         gold_step=gold_step,
     )
 
-    runner.run(output_file=output_file)
+    runner.run(output_file=output_file, tracker=tracker)
 
 
 def main(**kwargs):

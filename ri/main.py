@@ -7,6 +7,18 @@ from pathlib import Path
 import hydra
 from omegaconf import DictConfig
 
+from ri.tracking import ExperimentTracker
+
+
+def _build_tracker(cfg: DictConfig) -> ExperimentTracker:
+    tracking_cfg = cfg.get("tracking", {})
+    return ExperimentTracker(
+        project=tracking_cfg.get("project", "when-cot-fails"),
+        name=tracking_cfg.get("name"),
+        tags=list(tracking_cfg.get("tags") or []),
+        enabled=tracking_cfg.get("enabled", False),
+    )
+
 
 def _resolve_target_positions(raw: object) -> list[int] | None:
     """Accept None, a comma-separated string, or a list — return list[int] or None."""
@@ -27,7 +39,15 @@ def _resolve_target_positions(raw: object) -> list[int] | None:
 )
 def main(cfg: DictConfig) -> None:
     task = cfg.task.name
+    tracker = _build_tracker(cfg)
 
+    try:
+        _dispatch(cfg, task, tracker)
+    finally:
+        tracker.finish()
+
+
+def _dispatch(cfg: DictConfig, task: str, tracker: ExperimentTracker) -> None:
     if task == "evaluate":
         from ri.evaluation.runner import run_evaluation
 
@@ -40,6 +60,7 @@ def main(cfg: DictConfig) -> None:
             max_gen_len=cfg.task.max_gen_len,
             seed=cfg.seed,
             output_file=cfg.task.output_file,
+            tracker=tracker,
         )
 
     elif task == "patch":
@@ -66,6 +87,7 @@ def main(cfg: DictConfig) -> None:
             patch_from_generation=cfg.task.patch_from_generation,
             gen_cache_dir=cfg.task.gen_cache_dir,
             output_file=cfg.task.output_file,
+            tracker=tracker,
         )
 
     elif task == "cma":
@@ -90,6 +112,7 @@ def main(cfg: DictConfig) -> None:
             max_gen_len=cfg.task.max_gen_len,
             patch_position=cfg.task.patch_position,
             output_file=cfg.task.output_file,
+            tracker=tracker,
         )
 
     elif task == "pe_analysis":

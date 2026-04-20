@@ -10,6 +10,7 @@ from ri.common import choose_torch_dtype, get_dataset, prepare_batch_data, set_r
 from ri.core.model import ModelAndTokenizer
 from ri.prompts.prompter import Prompter
 from ri.settings.settings import Constants
+from ri.tracking import ExperimentTracker
 from ri.utils.extraction import extract_answer
 
 from .config import HSSelectionMode, PatchConfig, StepsType
@@ -190,7 +191,7 @@ class PatchRunner:
             result["source_generated_answer"] = gen.get("source_generated_answer", [])
         return result
 
-    def run(self, output_file: str) -> None:
+    def run(self, output_file: str, tracker: ExperimentTracker | None = None) -> None:
         results: dict[str, list[Any]] = {
             "question": [],
             "answer": [],
@@ -218,7 +219,24 @@ class PatchRunner:
                 pbar.update(processed if processed > 0 else self.batch_size)
                 pbar.set_postfix(batch=f"{idx + 1}/{num_batches}")
 
-        pd.DataFrame(results).to_json(output_file, orient="records")
+        df = pd.DataFrame(results)
+        df.to_json(output_file, orient="records")
+
+        if tracker is not None and tracker.is_enabled:
+            tracker.log_config(self.patch_config)
+            tracker.log_dataframe("patch_samples", df)
+            n_correct = int(
+                (df["Answer_num"].astype(str) == df["Generated Answer_num"].astype(str)).sum()
+            )
+            tracker.log_metrics(
+                {
+                    "n_correct": n_correct,
+                    "n_samples": len(df),
+                    "accuracy": n_correct / max(len(df), 1),
+                    "source_layer": self.patch_config.source_layer,
+                    "target_layer": self.patch_config.target_layer,
+                }
+            )
 
 
 def run_patch(
@@ -243,6 +261,7 @@ def run_patch(
     include_all_tokens: bool = False,
     gen_cache_dir: str | None = None,
     output_file: str,
+    tracker: ExperimentTracker | None = None,
 ) -> None:
     parsed_steps: StepsType
     if isinstance(steps, str):
@@ -289,4 +308,4 @@ def run_patch(
         gold_step=gold_step,
     )
 
-    runner.run(output_file)
+    runner.run(output_file, tracker=tracker)

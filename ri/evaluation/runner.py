@@ -15,6 +15,7 @@ from ri.common import (
 from ri.core.model import ModelAndTokenizer
 from ri.prompts.prompter import Prompter
 from ri.settings.settings import Constants
+from ri.tracking import ExperimentTracker
 from ri.utils.extraction import extract_answer
 
 from .config import EvaluationConfig
@@ -30,6 +31,7 @@ def run_evaluation(
     max_gen_len: int,
     seed: int,
     output_file: str,
+    tracker: ExperimentTracker | None = None,
 ) -> None:
     config = EvaluationConfig(
         batch_size=batch_size,
@@ -45,7 +47,7 @@ def run_evaluation(
         config=config,
     )
 
-    runner.run(output_file)
+    runner.run(output_file, tracker=tracker)
 
 
 class EvaluationRunner:
@@ -100,7 +102,7 @@ class EvaluationRunner:
             "Answer_num": numeric_answers,
         }
 
-    def run(self, output_file: str) -> None:
+    def run(self, output_file: str, tracker: ExperimentTracker | None = None) -> None:
         results: dict[str, list[Any]] = {
             "Input": [],
             "question": [],
@@ -120,4 +122,19 @@ class EvaluationRunner:
             results["Input"].extend(batch_res["Input"])
             results["Answer_num"].extend(batch_res["Answer_num"])
 
-        pd.DataFrame(results).to_json(output_file, orient="records")
+        df = pd.DataFrame(results)
+        df.to_json(output_file, orient="records")
+
+        if tracker is not None and tracker.is_enabled:
+            tracker.log_config(self.config)
+            tracker.log_dataframe("eval_samples", df)
+            n_correct = int(
+                (df["Answer_num"].astype(str) == df["Generated Answer_num"].astype(str)).sum()
+            )
+            tracker.log_metrics(
+                {
+                    "n_correct": n_correct,
+                    "n_samples": len(df),
+                    "accuracy": n_correct / max(len(df), 1),
+                }
+            )

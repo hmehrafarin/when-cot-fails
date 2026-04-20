@@ -12,7 +12,7 @@ uv sync
 
 This creates a virtual environment in `.venv/` and installs the project in editable mode.
 
-Run commands via `uv run` (e.g. `uv run python -m ri.main ...`), or activate the environment with `source .venv/bin/activate`.
+Run commands via `uv run` (e.g. `uv run ri ...`), or activate the environment with `source .venv/bin/activate`.
 
 Requires Python 3.10+, PyTorch, and Transformers.
 
@@ -29,14 +29,10 @@ ri/conf/
 └── tracking/            # disabled, wandb
 ```
 
-The entrypoint is `ri/main.py`. Override any value from the CLI with dotted paths:
+The entrypoint is `ri/main.py`, exposed as the `ri` console script. Override any value from the CLI with dotted paths:
 
 ```bash
-uv run python -m ri.main \
-    task=patch \
-    model=qwen_7b \
-    task.source_layer=15 task.target_layer=15 \
-    task.patch_from_generation=true
+uv run ri task=patch model=qwen_7b task.source_layer=15 task.target_layer=15
 ```
 
 Pydantic v2 validates each config when it is constructed, so invalid values fail loudly at the start of a run.
@@ -65,30 +61,38 @@ To clear cached data, delete the relevant directories.
 
 ### Step 1: Generate model outputs
 
+Before running any patching experiment, you need to evaluate your model on GSM-8K to produce the output files that patching and PE analysis consume. Run the model with CoT and without CoT prompts separately:
+
 ```bash
-# CoT outputs
-uv run python -m ri.main task=evaluate \
+# Generate CoT outputs
+uv run ri task=evaluate \
     dataset.src_prompt_template=gsm8k_cot \
-    task.batch_size=1 task.max_gen_len=400 \
+    task.batch_size=1 task.max_gen_len=400 seed=42 \
     task.output_file=outputs/single_batch_output_cot.json
 
-# non-CoT outputs
-uv run python -m ri.main task=evaluate \
+# Generate non-CoT outputs
+uv run ri task=evaluate \
     dataset.src_prompt_template=gsm8k_non_cot \
-    task.batch_size=1 task.max_gen_len=400 \
+    task.batch_size=1 task.max_gen_len=400 seed=42 \
     task.output_file=outputs/single_batch_output_non_cot.json
 ```
 
 **Note:** Batch size > 1 is not yet supported for patching experiments. Use `task.batch_size=1`.
 
+These output JSON files are then passed as `dataset.source_dataset` and `dataset.target_dataset` to the patching tasks below.
+
 ### Step 2: Run patching experiments
 
-Both `patch_position_sweep` and `pe_analysis` operate on a single sample (`task.sample_idx`) and sweep across layers and target positions.
+There are two experiment tasks for full reproducibility, plus single-run tasks (`patch`, `cma`) for standalone invocations.
 
-#### Patch position sweep
+Both `patch_position_sweep` and `pe_analysis` operate on a single sample (`task.sample_idx`) and sweep across all layers and all target positions. For running patching across many configurations at once, use Hydra's `--multirun` (see *Grid sweeps* below).
+
+### Patch position sweep
+
+Sweeps over source positions, target positions, and layers for one sample. For each combination, patches a single source CoT hidden state (with `task.patch_from_generation=true`) into the target model and saves the generated output.
 
 ```bash
-uv run python -m ri.main task=patch_position_sweep \
+uv run ri task=patch_position_sweep \
     dataset.source_dataset=outputs/single_batch_output_cot.json \
     dataset.target_dataset=outputs/single_batch_output_cot.json \
     task.sample_idx=0 \
@@ -96,54 +100,81 @@ uv run python -m ri.main task=patch_position_sweep \
     task.output_dir=patch_pos_sweep_results
 ```
 
-#### Patch effect (PE) analysis
+Key overrides:
+- `task.layer` — patch a specific layer (otherwise sweeps all layers)
+- `task.start_layer`, `task.layer_stride` — control layer sweep range
+- `task.target_pos` — patch at a specific target position (otherwise sweeps all)
+- `task.target_positions` — comma-separated list of target positions (e.g. `"0,-1"`)
+- `task.patch_from_generation=true` — extract source hidden states from generation rather than the prompt
+- `task.resume=true` — skip completed output files
+
+### Patch effect (PE) analysis
+
+Computes the patch effect metric across all layers and target positions for one sample. For each source token position, patches its hidden state from every layer into every target position and measures how the target model's output probability distribution changes.
+
+The patch effect is defined as:
+
+```
+PE = (before_patch_target_prob - after_patch_target_prob) / max(after_patch_target_prob, 1e-10)
+```
 
 ```bash
-uv run python -m ri.main task=pe_analysis \
+uv run ri task=pe_analysis \
     dataset.source_dataset=outputs/single_batch_output_cot.json \
     dataset.target_dataset=outputs/single_batch_output_cot.json \
     task.sample_idx=0 \
     task.output_dir=pe_output
 ```
 
-The PE metric is:
+Key overrides:
+- `task.start_src_pos` — starting source position (supports negative indexing)
+- `task.target_positions` — comma-separated target positions (e.g. `"0,-1"`)
+- `task.cache_logits` — cache logits to disk for reuse across runs (default: true)
+- `task.resume=true` — skip completed source position files
 
-```
-PE = (before_patch_target_prob - after_patch_target_prob) / max(after_patch_target_prob, 1e-10)
-```
+### Standalone experiments
 
-#### Single-run patching
+For generation, patching, and causal mediation analysis without the full sweep machinery:
 
 ```bash
-uv run python -m ri.main task=patch \
+# Generate model outputs
+uv run ri task=evaluate \
+    dataset.source_dataset=outputs/single_batch_output_cot.json \
+    dataset.src_prompt_template=gsm8k_cot \
+    task.batch_size=1 task.max_gen_len=400 seed=42 \
+    task.output_file=output.json
+
+# Single patching run
+uv run ri task=patch \
+    dataset.source_dataset=outputs/single_batch_output_cot.json \
+    dataset.target_dataset=outputs/single_batch_output_cot.json \
     task.source_layer=15 task.target_layer=15 \
     task.patch_from_generation=true \
     task.output_file=output_patched.json
-```
 
-#### Causal mediation analysis
-
-```bash
-uv run python -m ri.main task=cma \
+# Causal mediation analysis
+uv run ri task=cma \
+    dataset.source_dataset=outputs/single_batch_output_cot.json \
+    dataset.target_dataset=outputs/single_batch_output_cot.json \
     task.source_layer=25 task.target_layer=25 \
     task.output_file=patch_position_analysis.json
 ```
 
 ### Grid sweeps (`--multirun`)
 
-Hydra's native `--multirun` (`-m`) replaces the old `ri-patch-grid` script. Sweep over any combination of fields by passing comma-separated values:
+Hydra's native `--multirun` (`-m`) replaces the old `ri-patch-grid` subprocess launcher. Sweep over any combination of fields with comma-separated values:
 
 ```bash
-uv run python -m ri.main -m task=patch \
+uv run ri -m task=patch \
     task.source_layer=0,4,8,12,16,20,24,28 \
     task.target_layer=0,4,8,12,16,20,24,28 \
     task.patching_k=1,3,5
 ```
 
-Each run writes to a unique subdirectory under `multirun/<date>/<time>/<job>`. Range syntax is also supported:
+Each job writes to a unique subdirectory under `multirun/<date>/<time>/<job>`. Range syntax is also supported:
 
 ```bash
-uv run python -m ri.main -m task=patch \
+uv run ri -m task=patch \
     'task.source_layer=range(0,32)' \
     'task.target_layer=range(0,32)'
 ```
@@ -154,7 +185,7 @@ uv run python -m ri.main -m task=patch \
 - `ri/conf/` — YAML config tree (task/model/dataset/tracking)
 - `ri/settings/` — module-level environment/path constants
 - `ri/core/` — model loading and forward hook infrastructure
-- `ri/patching/` — patching pipeline, Pydantic config, and tensor operations
+- `ri/patching/` — patching pipeline, Pydantic config, tensor operations, and the `pe_analysis` / `patch_position_sweep` experiment modules
 - `ri/patching/cma/` — causal mediation analysis
 - `ri/prompts/` — prompt templates and construction
 - `ri/evaluation/` — generation and evaluation runner

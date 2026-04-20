@@ -37,7 +37,7 @@ include-package-data = true
 include = ["ri", "ri.*"]
 
 [tool.setuptools.package-data]
-"*" = ["*.json"]
+"*" = ["*.json", "*.yaml"]
 
 [project.optional-dependencies]
 test = ["pytest>=7", "pytest-cov"]

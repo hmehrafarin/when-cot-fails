@@ -1,0 +1,12 @@
+name: cma
+max_gen_len: 400
+source_layer: 25
+target_layer: 25
+steps: "1"
+hs_selection: -1
+patching_k: 1
+include_all_tokens: false
+patch_from_generation: false
+patch_position: null
+gold_step: false
+output_file: patch_position_analysis.json

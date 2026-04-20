@@ -28,7 +28,6 @@ dependencies = [
 
 [project.scripts]
 ri = "ri.cli:cli"
-ri-wrong-preds = "ri.entry_points.get_wrong_predictions:main"
 ri-patch-grid = "ri.entry_points.run_patch_grid:run"
 
 [tool.setuptools]

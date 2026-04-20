@@ -21,6 +21,9 @@ dependencies = [
   "fire",
   "hf-transfer",
   "tqdm",
+  "pydantic>=2.13.2",
+  "hydra-core>=1.3.2",
+  "omegaconf>=2.3.0",
 ]
 
 [project.scripts]
@@ -104,4 +107,15 @@ known_first_party = ["ri"]
 ignore_notebooks = true
 
 [tool.deptry.per_rule_ignores]
-DEP002 = ["accelerate", "bitsandbytes", "hf-transfer", "pytest", "pytest-cov"]
+DEP002 = [
+  "accelerate",
+  "bitsandbytes",
+  "hf-transfer",
+  "pytest",
+  "pytest-cov",
+  # Used via Hydra composition (no direct Python import in user code).
+  "hydra-core",
+  "omegaconf",
+  # Wired in across subsequent commits in this refactor series.
+  "pydantic",
+]

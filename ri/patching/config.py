@@ -1,7 +1,8 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
 from typing import Any, Literal
+
+from pydantic import BaseModel, Field, field_validator
 
 from ri.config.settings import Constants
 
@@ -32,43 +33,55 @@ def _normalize_hs_selection(value: Any) -> HSSelectionMode:
     )
 
 
-@dataclass
-class PatchConfig:
+class PatchConfig(BaseModel):
     """Configuration for hidden state patching experiments."""
 
-    max_gen_len: int
+    max_gen_len: int = Field(gt=0)
     source_layer: int
     target_layer: int
     patch_position: int | None = None
     steps: StepsType = None
     hs_selection: HSSelectionMode = -1
-    patching_k: int | None = None
+    patching_k: int = Field(default=1, gt=0)
     include_all_tokens: bool = False
     gen_cache_dir: str | None = None
 
-    def __post_init__(self) -> None:
-        if self.max_gen_len <= 0:
-            raise ValueError("max_gen_len must be a positive integer")
-
-        if isinstance(self.steps, int):
-            if self.steps <= 0:
-                self.steps = 1
-        elif isinstance(self.steps, str):
-            normalized = self.steps.strip().lower()
-            if normalized == "all":
-                self.steps = "all"
-            elif normalized == "no_steps":
-                self.steps = "no_steps"
-            else:
-                raise ValueError("steps must be a positive integer, 'all' or 'no_steps'")
-        elif self.steps is None:
-            pass
-        else:
+    @field_validator("steps", mode="before")
+    @classmethod
+    def _coerce_steps(cls, v: object) -> StepsType:
+        if v is None:
+            return None
+        if isinstance(v, bool):
             raise ValueError("steps must be a positive integer, 'all' or 'no_steps'")
+        if isinstance(v, int):
+            return v if v > 0 else 1
+        if isinstance(v, str):
+            normalized = v.strip().lower()
+            if normalized == "all":
+                return "all"
+            if normalized == "no_steps":
+                return "no_steps"
+            if normalized == "none":
+                return None
+            try:
+                parsed = int(normalized)
+            except ValueError as e:
+                raise ValueError("steps must be a positive integer, 'all' or 'no_steps'") from e
+            return parsed if parsed > 0 else 1
+        raise ValueError("steps must be a positive integer, 'all' or 'no_steps'")
 
-        self.hs_selection = _normalize_hs_selection(self.hs_selection)
+    @field_validator("hs_selection", mode="before")
+    @classmethod
+    def _coerce_hs_selection(cls, v: object) -> HSSelectionMode:
+        return _normalize_hs_selection(v)
 
-        if not self.patching_k or self.patching_k <= 0:
-            self.patching_k = 1
-
-        self.include_all_tokens = bool(self.include_all_tokens)
+    @field_validator("patching_k", mode="before")
+    @classmethod
+    def _coerce_patching_k(cls, v: object) -> int:
+        if v is None:
+            return 1
+        try:
+            parsed = int(v)  # type: ignore[call-overload]
+        except (TypeError, ValueError):
+            return 1
+        return parsed if parsed > 0 else 1

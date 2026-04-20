@@ -4,22 +4,21 @@ import hashlib
 import json
 import os
 import shutil
-from dataclasses import dataclass
 
 import torch
+from pydantic import BaseModel, Field
 
 
-@dataclass
-class LogitCacheConfig:
+class LogitCacheConfig(BaseModel):
     """Configuration for logit caching."""
 
     cache_dir: str
-    sample_idx: int
+    sample_idx: int = Field(ge=0)
     source_model_name: str
     target_model_name: str
     source_dataset: str
     target_dataset: str
-    max_gen_len: int
+    max_gen_len: int = Field(gt=0)
     seed: int
     src_prompt_template: str
     tgt_prompt_template: str

@@ -116,6 +116,4 @@ DEP002 = [
   # Used via Hydra composition (no direct Python import in user code).
   "hydra-core",
   "omegaconf",
-  # Wired in across subsequent commits in this refactor series.
-  "pydantic",
 ]

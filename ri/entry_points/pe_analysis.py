@@ -10,7 +10,6 @@ import torch
 import torch.nn.functional as F
 from tqdm import tqdm
 
-from ri.config.settings import PATCH_LOGITS_CACHE_DIR
 from ri.core.hooks import remove_hooks, set_patch
 from ri.patching.cma import CausalMediationRunner
 from ri.patching.cma.pipeline import (
@@ -22,6 +21,7 @@ from ri.patching.config import PatchConfig
 from ri.patching.logit_cache import LogitCache, LogitCacheConfig
 from ri.patching.pipeline import _safe_token_from_id
 from ri.patching.tensor_ops import left_pad_offsets
+from ri.settings.settings import PATCH_LOGITS_CACHE_DIR
 from ri.utils import (
     decode_tokens,
     extract_answer_from_generation,

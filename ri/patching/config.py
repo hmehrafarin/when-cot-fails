@@ -4,7 +4,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field, field_validator
 
-from ri.config.settings import Constants
+from ri.settings.settings import Constants
 
 HSSelectionLiteral = Literal["random_k", "early", "mid", "late"]
 HSSelectionMode = HSSelectionLiteral | int

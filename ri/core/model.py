@@ -4,7 +4,7 @@ from typing import Any
 import torch
 import transformers
 
-from ri.config import settings
+from ri.settings import settings
 
 
 class ModelAndTokenizer:

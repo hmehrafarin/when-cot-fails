@@ -7,9 +7,9 @@ import pandas as pd
 from tqdm import tqdm
 
 from ri.common import choose_torch_dtype, get_dataset, prepare_batch_data, set_random_seed
-from ri.config.settings import Constants
 from ri.core.model import ModelAndTokenizer
 from ri.prompts.prompter import Prompter
+from ri.settings.settings import Constants
 from ri.utils.extraction import extract_answer
 
 from .config import HSSelectionMode, PatchConfig, StepsType

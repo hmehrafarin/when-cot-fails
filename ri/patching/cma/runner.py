@@ -5,9 +5,9 @@ from typing import Any
 
 from tqdm import tqdm
 
-from ri.config import DEFAULT_MODEL_NAME
 from ri.patching.config import HSSelectionMode, PatchConfig, StepsType
 from ri.patching.runner import PatchRunner
+from ri.settings import DEFAULT_MODEL_NAME
 
 from . import pipeline as cma_pipeline
 

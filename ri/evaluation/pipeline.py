@@ -21,11 +21,7 @@ def generate_batch_outputs(
     """
     Generate answers for a batch of prompts and extract numeric / CoT outputs.
     """
-    convos = build_prompt_batch(
-        prompter,
-        batched_input,
-        steps=config.steps,
-    )
+    convos = build_prompt_batch(prompter, batched_input)
 
     supports_system_prompt = bool(getattr(mt, "is_instruct_model", False))
 
@@ -57,7 +53,7 @@ def generate_batch_outputs(
         template_name=getattr(prompter, "template_name", None),
     )
 
-    rendered_input = [convo[-1]["content"] if convo else "" for convo in convos]
+    rendered_input: list[str | None] = [convo[-1]["content"] if convo else "" for convo in convos]
 
     return {
         "input": rendered_input,

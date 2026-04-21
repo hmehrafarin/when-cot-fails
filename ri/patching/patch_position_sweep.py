@@ -130,7 +130,6 @@ def run(
         patch_from_generation=patch_from_generation,
         patch_config=patch_config,
         seed=42,
-        gold_step=False,
         batch_size=1,
     )
 
@@ -147,7 +146,6 @@ def run(
     source_convos = build_prompt_batch(
         runner.src_prompter,
         batched_input_source,
-        steps=patch_config.steps,
     )
     rendered_source_prompts = render_prompts(
         runner.source_mt.tokenizer,
@@ -191,7 +189,6 @@ def run(
     target_convos = build_prompt_batch(
         runner.tgt_prompter,
         batched_input_tgt,
-        steps=patch_config.steps,
     )
     rendered_tgt_prompts = render_prompts(
         runner.target_mt.tokenizer,

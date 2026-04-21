@@ -3,12 +3,9 @@ batch_size: 1
 max_gen_len: 400
 source_layer: -1
 target_layer: -1
-steps: no_steps
 hs_selection: -1
-patching_k: 1
 include_all_tokens: false
 patch_from_generation: false
 patch_position: null
-gold_step: false
 gen_cache_dir: null
 output_file: output_patched.json

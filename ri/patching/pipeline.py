@@ -18,8 +18,8 @@ from ri.utils.tokenizer import (
     render_prompts,
 )
 
-from .config import PatchConfig, StepsType
-from .selectors import select_positions_with_mode, select_step_positions
+from .config import PatchConfig
+from .selectors import select_position_with_mode
 from .tensor_ops import (
     compute_core_token_positions,
     left_pad_offsets,
@@ -189,10 +189,9 @@ def get_source_hidden_states(
             generated_token_ids = cached_data["generated_token_ids"]
             source_extracted_answers = cached_data["source_extracted_answers"]
         else:
-            gen_tokens = max(cfg.max_gen_len, cfg.patching_k or 1, 1)
             generation = source_mt.model.generate(
                 **tokenized_source,
-                max_new_tokens=gen_tokens,
+                max_new_tokens=cfg.max_gen_len,
                 eos_token_id=source_eos_ids,
                 pad_token_id=source_pad_id,
                 do_sample=False,
@@ -284,27 +283,14 @@ def patch_and_generate(
     *,
     patch_from_generation: bool,
     config: PatchConfig,
-    gold_step: bool,
     batch_size: int = 1,
 ) -> dict[str, Any]:
-
     cfg = config
     source_tokenizer = source_mt.tokenizer
     target_tokenizer = target_mt.tokenizer
     target_supports_system_prompt = bool(getattr(target_mt, "is_instruct_model", False))
-    tgt_template_name = getattr(tgt_prompter, "template_name", "unknown")
-    tgt_steps: StepsType = None
-    if "non_cot" not in tgt_template_name.lower() and gold_step:
-        if isinstance(cfg.steps, int) and cfg.steps > 1:
-            tgt_steps = cfg.steps - 1
-        elif cfg.steps == "all":
-            tgt_steps = "all"
 
-    source_convos = build_prompt_batch(
-        src_prompter,
-        batched_input_source,
-        steps=cfg.steps,
-    )
+    source_convos = build_prompt_batch(src_prompter, batched_input_source)
 
     rendered_source_prompts = render_prompts(
         source_tokenizer,
@@ -335,37 +321,22 @@ def patch_and_generate(
         source_tokenizer,
     )
 
-    # Find step-specific positions within the core positions
-    step_positions: list[list[int]]
-    if cfg.steps in (None, "no_steps"):
-        step_positions = [[] for _ in range(len(source_prompt_positions))]
-    else:
-        step_positions = [
-            select_step_positions(
-                source_core_positions[i] if i < len(source_core_positions) else [],
-                source_prompt_texts[i] if i < len(source_prompt_texts) else "",
-                source_tokenizer,
-                cfg.steps,
-            )
-            for i in range(len(source_prompt_positions))
-        ]
-
-    # if include_all_tokens is set, use all prompt tokens as selection pool
-    use_full_selection_pool = bool(getattr(cfg, "include_all_tokens", False))
+    # Pool of candidate positions from which we'll pick the single hs_selection index
+    use_full_selection_pool = bool(cfg.include_all_tokens)
     selection_pool: list[list[int]] = []
     for i in range(len(source_prompt_positions)):
         if use_full_selection_pool:
             candidates = list(source_prompt_positions[i])
         else:
-            candidates = step_positions[i] if i < len(step_positions) else []
-            if not candidates and i < len(source_core_positions):
-                candidates = list(source_core_positions[i])
+            candidates = (
+                list(source_core_positions[i])
+                if i < len(source_core_positions)
+                else list(source_prompt_positions[i])
+            )
             if not candidates:
                 candidates = list(source_prompt_positions[i])
         selection_pool.append(candidates)
 
-    get_pad_id(source_tokenizer)
-    get_eos_token_ids(source_tokenizer)
     target_pad_id = get_pad_id(target_tokenizer)
     target_eos_ids = get_eos_token_ids(target_tokenizer)
 
@@ -380,15 +351,11 @@ def patch_and_generate(
     )
 
     if patch_from_generation:
-        # Reconstruct selection pool (common to both paths)
+        # For generation-based patching, the pool is the generated token positions.
         selection_pool = [list(range(len(ids))) for ids in generated_token_ids]
 
     # Prepare target inputs
-    tgt_convos = build_prompt_batch(
-        tgt_prompter,
-        batched_input_tgt,
-        steps=tgt_steps,
-    )
+    tgt_convos = build_prompt_batch(tgt_prompter, batched_input_tgt)
 
     rendered_tgt_prompts = render_prompts(
         target_tokenizer,
@@ -429,35 +396,16 @@ def patch_and_generate(
             idx = max(idx, off)
         actual_patch_positions.append(idx)
 
-    hs_selection_mode = cfg.hs_selection
-    positions_to_select = cfg.patching_k or 1
-    selected_source_token_texts: list[list[str]] = []
-
-    # Select token positions to extract hidden states from
-    source_selected_tokens = [
-        select_positions_with_mode(
-            selection_pool[i],
-            positions_to_select,
-            hs_selection_mode,
-        )
-        for i in range(len(selection_pool))
-    ]
-
-    for i in range(len(source_selected_tokens)):
-        if source_selected_tokens[i]:
-            continue
-        fallback = selection_pool[i] if i < len(selection_pool) else []
-        if fallback:
-            fill = int(fallback[-1])
-            source_selected_tokens[i] = [fill] * positions_to_select
-        else:
-            source_selected_tokens[i] = [0] * positions_to_select
+    # Select a single source position per sample at the cfg.hs_selection index.
+    source_selected_tokens: list[list[int]] = []
+    for i in range(len(selection_pool)):
+        picked = select_position_with_mode(selection_pool[i], cfg.hs_selection)
+        if picked is None:
+            picked = 0
+        source_selected_tokens.append([picked])
 
     if patch_from_generation:
-        # We already computed source_selected_tokens using the generation pool earlier
-        # Just need to extract the text for logging and the tensors for patching
-
-        selected_source_token_texts = []
+        selected_source_token_texts: list[list[str]] = []
         for i, pos_list in enumerate(source_selected_tokens):
             gen_tokens = generated_token_ids[i] if i < len(generated_token_ids) else []
             tokens_for_sample: list[str] = []
@@ -487,7 +435,7 @@ def patch_and_generate(
             torch.tensor(source_selected_tokens, device=batch_source_hs.device)
             .unsqueeze(-1)
             .expand(-1, -1, batch_source_hs.size(-1))
-        )  # (B, K, H)
+        )  # (B, 1, H)
         selected_source_hs = torch.gather(
             batch_source_hs,
             dim=1,

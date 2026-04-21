@@ -1,5 +1,4 @@
 name: evaluate
 batch_size: 16
 max_gen_len: 400
-steps: null
 output_file: output.json

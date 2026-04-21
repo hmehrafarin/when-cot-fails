@@ -6,31 +6,12 @@ from typing import Any
 import pandas as pd
 from tqdm import tqdm
 
-from ri.patching.config import HSSelectionMode, PatchConfig, StepsType
+from ri.patching.config import PatchConfig
 from ri.patching.runner import PatchRunner
 from ri.settings import DEFAULT_MODEL_NAME
 from ri.tracking import ExperimentTracker
 
 from . import pipeline as cma_pipeline
-
-
-def coerce_steps(value: int | str | None) -> StepsType:
-    """Convert steps argument to StepsType."""
-    if value is None:
-        return None
-    if isinstance(value, int):
-        return value
-    lowered = value.strip().lower()
-    if lowered == "all":
-        return "all"
-    if lowered == "no_steps":
-        return None
-    try:
-        return int(value)
-    except ValueError as exc:
-        raise ValueError(
-            f"--steps must be an integer, 'all', or 'no_steps', got {value!r}"
-        ) from exc
 
 
 class CausalMediationRunner(PatchRunner):
@@ -50,7 +31,6 @@ class CausalMediationRunner(PatchRunner):
         patch_from_generation: bool,
         patch_config: PatchConfig,
         seed: int,
-        gold_step: bool,
         target_model_name: str | None = None,
     ):
         super().__init__(
@@ -63,7 +43,6 @@ class CausalMediationRunner(PatchRunner):
             patch_from_generation=patch_from_generation,
             patch_config=patch_config,
             seed=seed,
-            gold_step=gold_step,
             target_model_name=target_model_name,
         )
         self.config = patch_config
@@ -85,7 +64,6 @@ class CausalMediationRunner(PatchRunner):
             batched_input_source=batched_input_source,
             batched_input_tgt=batched_input_tgt,
             config=self.config,
-            gold_step=self.gold_step,
             patch_from_generation=self.patch_from_generation,
             sample_idx=sample_idx,
             batch_size=self.batch_size,
@@ -136,33 +114,29 @@ def run_cma(
     target_dataset: str = "outputs/output_42_no_icl_deterministic.json",
     src_prompt_template: str = "gsm8k_cot",
     tgt_prompt_template: str = "gsm8k_non_cot",
-    gold_step: bool = True,
     source_layer: int = 25,
     target_layer: int = 25,
     seed: int = 42,
-    steps: int | str | None = 1,
-    hs_selection: HSSelectionMode = -1,
-    patching_k: int = 1,
+    hs_selection: int = -1,
     include_all_tokens: bool = False,
     patch_from_generation: bool = False,
     max_gen_len: int = 400,
     patch_position: int | None = None,
+    gen_cache_dir: str | None = None,
     output_file: str = "patch_position_analysis.json",
     tracker: ExperimentTracker | None = None,
 ) -> None:
     resolved_source_model = source_model_name or model_name
     resolved_target_model = target_model_name or resolved_source_model
-    parsed_steps = coerce_steps(steps)
 
     patch_config = PatchConfig(
         max_gen_len=max_gen_len,
         source_layer=source_layer,
         target_layer=target_layer,
         patch_position=patch_position,
-        steps=parsed_steps,
         hs_selection=hs_selection,
-        patching_k=patching_k,
         include_all_tokens=include_all_tokens,
+        gen_cache_dir=gen_cache_dir,
     )
 
     runner = CausalMediationRunner(
@@ -175,11 +149,6 @@ def run_cma(
         patch_from_generation=patch_from_generation,
         patch_config=patch_config,
         seed=seed,
-        gold_step=gold_step,
     )
 
     runner.run(output_file=output_file, tracker=tracker)
-
-
-def main(**kwargs):
-    run_cma(**kwargs)

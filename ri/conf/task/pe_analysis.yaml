@@ -1,7 +1,6 @@
 name: pe_analysis
 max_gen_len: 400
 patch_from_generation: true
-gold_step: true
 start_src_pos: 0
 cache_logits: true
 logit_cache_dir: null

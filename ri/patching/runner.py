@@ -13,7 +13,7 @@ from ri.settings.settings import Constants
 from ri.tracking import ExperimentTracker
 from ri.utils.extraction import extract_answer
 
-from .config import HSSelectionMode, PatchConfig, StepsType
+from .config import PatchConfig
 from .pipeline import patch_and_generate
 
 
@@ -31,7 +31,6 @@ class PatchRunner:
         patch_from_generation: bool,
         patch_config: PatchConfig,
         seed: int,
-        gold_step: bool,
         target_model_name: str | None = None,
         cache_dir: str = Constants.HUGGINGFACE_CACHE_DIR,
     ):
@@ -49,10 +48,7 @@ class PatchRunner:
 
         self.batch_size = batch_size
         self.patch_config = patch_config
-        self.gold_step = gold_step
         self.patch_from_generation = patch_from_generation
-
-        self._filter_samples_by_steps()
 
         target_model_name = target_model_name or source_model_name
 
@@ -81,60 +77,6 @@ class PatchRunner:
 
         self.src_prompter = Prompter(template_name=src_prompt_template)
         self.tgt_prompter = Prompter(template_name=tgt_prompt_template)
-
-    @staticmethod
-    def _count_answer_steps(answer: str | None) -> int:
-        if not answer:
-            return 0
-        return sum(1 for line in str(answer).split("\n") if line.strip())
-
-    @staticmethod
-    def _extract_answer(row: Any) -> str | None:
-        if isinstance(row, dict):
-            return row.get("answer")
-        try:
-            return row["answer"]
-        except (TypeError, KeyError):
-            return getattr(row, "answer", None)
-
-    @staticmethod
-    def _select_rows(data: Any, indices: list[int]):
-        if hasattr(data, "select"):
-            return data.select(indices)
-        return [data[i] for i in indices]
-
-    def _filter_samples_by_steps(self) -> None:
-        """Filter out samples with fewer reasoning steps than required."""
-        steps = self.patch_config.steps
-        if steps == "all" or steps in (None, "no_steps"):
-            return
-        if not isinstance(steps, int) or steps <= 0:
-            return
-
-        tgt_required = steps
-        if self.gold_step:
-            tgt_required = max(steps - 1, 1)
-
-        max_len = min(len(self.source_data), len(self.target_data))
-        keep_indices: list[int] = []
-
-        for idx in range(max_len):
-            src_answer = self._extract_answer(self.source_data[idx])
-            if self._count_answer_steps(src_answer) < steps:
-                continue
-
-            if tgt_required is not None:
-                tgt_answer = self._extract_answer(self.target_data[idx])
-                if self._count_answer_steps(tgt_answer) < tgt_required:
-                    continue
-
-            keep_indices.append(idx)
-
-        if len(keep_indices) == max_len and len(self.source_data) == len(self.target_data):
-            return
-
-        self.source_data = self._select_rows(self.source_data, keep_indices)
-        self.target_data = self._select_rows(self.target_data, keep_indices)
 
     def _run_single_batch(self, batch_idx: int) -> dict[str, list]:
         #!TODO: refactor to drop the token importance, we will remove it in the next update
@@ -166,7 +108,6 @@ class PatchRunner:
             batched_input_source=batched_input_source,
             batched_input_tgt=batched_input_tgt,
             config=self.patch_config,
-            gold_step=self.gold_step,
             batch_size=self.batch_size,
         )
 
@@ -247,7 +188,6 @@ def run_patch(
     target_dataset: str,
     src_prompt_template: str,
     tgt_prompt_template: str,
-    gold_step: bool,
     batch_size: int,
     max_gen_len: int,
     source_layer: int,
@@ -255,41 +195,18 @@ def run_patch(
     patch_position: int | None,
     seed: int,
     patch_from_generation: bool,
-    steps: int | str | None,
-    hs_selection: HSSelectionMode,
-    patching_k: int,
+    hs_selection: int,
     include_all_tokens: bool = False,
     gen_cache_dir: str | None = None,
     output_file: str,
     tracker: ExperimentTracker | None = None,
 ) -> None:
-    parsed_steps: StepsType
-    if isinstance(steps, str):
-        lowered = steps.strip().lower()
-        if lowered == "all":
-            parsed_steps = "all"
-        elif lowered == "no_steps":
-            parsed_steps = None
-        else:
-            try:
-                parsed_steps = int(steps)
-            except ValueError as exc:
-                raise ValueError(
-                    f"--steps must be an integer, 'all', or 'no_steps', got {steps!r}"
-                ) from exc
-    elif isinstance(steps, int) or steps is None:
-        parsed_steps = steps
-    else:
-        raise ValueError(f"--steps must be an integer, 'all', or 'no_steps', got {steps!r}")
-
     patch_config = PatchConfig(
         max_gen_len=max_gen_len,
         source_layer=source_layer,
         target_layer=target_layer,
         patch_position=patch_position,
-        steps=parsed_steps,
         hs_selection=hs_selection,
-        patching_k=patching_k,
         include_all_tokens=include_all_tokens,
         gen_cache_dir=gen_cache_dir,
     )
@@ -305,7 +222,6 @@ def run_patch(
         batch_size=batch_size,
         patch_config=patch_config,
         seed=seed,
-        gold_step=gold_step,
     )
 
     runner.run(output_file, tracker=tracker)

@@ -26,7 +26,6 @@ def run_evaluation(
     model_name: str,
     dataset: str,
     prompt_template: str,
-    steps: int | None,
     batch_size: int,
     max_gen_len: int,
     seed: int,
@@ -36,7 +35,6 @@ def run_evaluation(
     config = EvaluationConfig(
         batch_size=batch_size,
         max_gen_len=max_gen_len,
-        steps=steps,
         seed=seed,
     )
 

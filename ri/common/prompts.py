@@ -1,43 +1,17 @@
 from __future__ import annotations
 
-from typing import Literal
-
 from ri.prompts.prompter import Prompter
-
-StepsLiteral = int | Literal["all"] | Literal["no_steps"]
 
 
 def build_prompt_batch(
     prompter: Prompter,
     batch_row: list[dict[str, str | None]],
-    steps: StepsLiteral | None = None,
-):
-    """
-    Build a batch of prompts based on the prompter template.
-    """
+) -> list[list[dict[str, str]]]:
+    """Build a batch of system/user chat turns from raw question/answer rows."""
 
-    def _slice_answer(ans: str | None) -> str:
-        if not ans or steps in (None, "no_steps"):
-            return ""
-        lines = [ln.strip() for ln in ans.split("\n") if ln.strip()]
-        if steps == "all":
-            return "\n".join(lines)
-        if isinstance(steps, int):
-            if steps <= 0:
-                return ""
-            return "\n".join(lines[:steps])
-        raise ValueError(f"Unsupported steps value: {steps!r}")
-
-    adjusted_rows: list[dict[str, str | None]] = []
-    for row in batch_row:
-        q = row.get("question", "")
-        a = row.get("answer", None)
-        adjusted_rows.append(
-            {
-                "question": q,
-                "answer": _slice_answer(a),
-            }
-        )
+    adjusted_rows: list[dict[str, str | None]] = [
+        {"question": row.get("question", ""), "answer": ""} for row in batch_row
+    ]
 
     system_text = prompter.template.get(
         "system",

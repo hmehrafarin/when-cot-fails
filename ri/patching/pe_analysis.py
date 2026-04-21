@@ -14,7 +14,6 @@ from ri.patching.cma import CausalMediationRunner
 from ri.patching.cma.pipeline import (
     build_prompt_inputs,
     make_batched_input,
-    resolve_target_steps,
 )
 from ri.patching.config import PatchConfig
 from ri.patching.logit_cache import LogitCache, LogitCacheConfig
@@ -190,7 +189,6 @@ class PatchEffectAnalyzer(CausalMediationRunner):
         tgt_prompt_template: str = "gsm8k_non_cot",
         patch_from_generation: bool = True,
         seed: int = 42,
-        gold_step: bool = True,
         target_model_name: str | None = None,
         max_gen_len: int = 400,
         start_src_pos: int | None = 0,
@@ -213,7 +211,6 @@ class PatchEffectAnalyzer(CausalMediationRunner):
             patch_from_generation=patch_from_generation,
             patch_config=patch_config,
             seed=seed,
-            gold_step=gold_step,
             target_model_name=target_model_name,
         )
         self.start_src_pos = start_src_pos
@@ -292,7 +289,6 @@ class PatchEffectAnalyzer(CausalMediationRunner):
             source_tokenizer,
             self.src_prompter,
             batched_input_source,
-            steps=self.config.steps,
             device=self.source_mt.device,
             system_prompt=True,
             add_generation_prompt=True,
@@ -305,14 +301,11 @@ class PatchEffectAnalyzer(CausalMediationRunner):
 
         # Build target inputs
         batched_input_tgt = make_batched_input(target_sample, include_generated=False)
-        tgt_template_name = getattr(self.tgt_prompter, "template_name", "unknown")
-        tgt_steps = resolve_target_steps(self.config.steps, tgt_template_name, self.gold_step)
 
         _, _, _, tokenized_tgt = build_prompt_inputs(
             target_tokenizer,
             self.tgt_prompter,
             batched_input_tgt,
-            steps=tgt_steps,
             device=self.target_mt.device,
             system_prompt=target_supports_system,
             add_generation_prompt=target_supports_system,
@@ -359,7 +352,7 @@ class PatchEffectAnalyzer(CausalMediationRunner):
         target_baseline_extracted = extract_answer_from_generation(
             target_baseline_text,
             tokenizer=target_tokenizer,
-            template_name=tgt_template_name,
+            template_name=getattr(self.tgt_prompter, "template_name", None),
         )
         target_answer_num = (
             target_baseline_extracted["answer_num"][0]

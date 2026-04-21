@@ -1,4 +1,3 @@
-from typing import List, Optional
 import json
 import os.path as osp
 
@@ -14,17 +13,17 @@ class Prompter:
     """
 
     __slots__ = (
-        "template",
-        "_verbose",
-        "_start_context",
         "_end_context",
+        "_start_context",
+        "_verbose",
+        "template",
         "template_name",
     )
 
     def __init__(
         self,
         template_name: str = "",
-        templates_dir: Optional[str] = None,
+        templates_dir: str | None = None,
     ):
         """
         Initialize the prompter with a template.
@@ -58,22 +57,24 @@ class Prompter:
     def end_context(self) -> str:
         return self._end_context
 
-    def create_query_prompts(self, batch_row: List[dict]) -> List[str]:
+    def create_query_prompts(self, batch_row: list[dict]) -> list[str]:
         """
         Returns the list of query prompts formatted for each item in batch_row.
         """
         queries = []
         for row in batch_row:
-            query = self.template["query"].format(
-                question=row["question"], answer=row["answer"]
-            ).strip()
+            query = (
+                self.template["query"]
+                .format(question=row["question"], answer=row["answer"])
+                .strip()
+            )
             queries.append(query)
         return queries
 
     def create_prompt(
         self,
-        batch_row: List[dict],
-    ) -> List[str]:
+        batch_row: list[dict],
+    ) -> list[str]:
         """
         Creates a batch of prompts from query data.
 
@@ -92,5 +93,5 @@ class Prompter:
     def get_response(self, output: str) -> str:
         """Extract the response portion from model output."""
         response_split = self.template["response_split"]
-        output = output.split(response_split)[-1].strip()
+        output = output.rsplit(response_split, maxsplit=1)[-1].strip()
         return output

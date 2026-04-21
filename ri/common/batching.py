@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
 from ri.utils.tokenizer import build_role_header
 
@@ -11,11 +11,11 @@ ASSISTANT_MARKER = "<|eot_id|><|start_header_id|>assistant<|end_header_id|>"
 
 
 def _normalize_qa_item(
-    item: Dict[str, Any],
+    item: dict[str, Any],
     *,
     user_marker: str,
     assistant_marker: str,
-) -> Tuple[str, str, List[Dict[str, Any]]]:
+) -> tuple[str, str, list[dict[str, Any]]]:
     """
     Normalize a dataset item into (question, answer, token_importance_list).
     """
@@ -35,7 +35,7 @@ def _normalize_qa_item(
             end_idx = j
             break
     segment = ti_raw[start_idx:end_idx]
-    cleaned_ti: List[Dict[str, Any]] = []
+    cleaned_ti: list[dict[str, Any]] = []
     for t in segment:
         if not isinstance(t, dict):
             continue
@@ -71,12 +71,11 @@ def prepare_batch_data(
     end = min(start + batch_size, n)
 
     batched_input = []
-    batch_questions: List[str] = []
-    batch_answers: List[str] = []
+    batch_questions: list[str] = []
+    batch_answers: list[str] = []
 
     user_marker = build_role_header(tokenizer, "user") or USER_MARKER
-    assistant_marker = build_role_header(
-        tokenizer, "assistant") or ASSISTANT_MARKER
+    assistant_marker = build_role_header(tokenizer, "assistant") or ASSISTANT_MARKER
 
     for i in range(start, end):
         item = data[i] or {}
@@ -86,7 +85,7 @@ def prepare_batch_data(
             assistant_marker=assistant_marker,
         )
 
-        entry = {"question": q, "answer": a}
+        entry: dict[str, Any] = {"question": q, "answer": a}
         if include_importance:
             entry["token_importance"] = ti
 

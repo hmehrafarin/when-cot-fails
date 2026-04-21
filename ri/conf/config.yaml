@@ -1,0 +1,16 @@
+defaults:
+  - task: evaluate
+  - model: llama_8b
+  - dataset: gsm8k
+  - tracking: disabled
+  - _self_
+
+seed: 42
+
+hydra:
+  job_logging:
+    loggers:
+      httpx:
+        level: WARNING
+      huggingface_hub:
+        level: WARNING

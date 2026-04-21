@@ -1,15 +1,14 @@
 from __future__ import annotations
 
+import os
 import random
-from typing import Optional
 
 import numpy as np
 import torch
 from transformers import set_seed
-import os
 
 
-def set_random_seed(seed: int = 42, deterministic: Optional[bool] = True) -> None:
+def set_random_seed(seed: int = 42, deterministic: bool | None = True) -> None:
     """
     Set global RNG state for reproducible runs.
 

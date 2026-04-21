@@ -1,0 +1,5 @@
+name: evaluate
+batch_size: 16
+max_gen_len: 400
+extraction_mode: flexible
+output_file: output.json

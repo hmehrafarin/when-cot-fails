@@ -3,11 +3,11 @@ requires = ["setuptools>=64", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "reasoning-interpretability"
+name = "when-cot-fails"
 version = "0.2.0"
 description = "Toolkit for prompt construction and patching for reasoning models"
 readme = "README.md"
-requires-python = ">=3.9"
+requires-python = ">=3.10"
 authors = [{ name = "h mehrafarin" }]
 license = { text = "MIT" }
 dependencies = [
@@ -17,15 +17,26 @@ dependencies = [
   "datasets",
   "pandas",
   "numpy",
-  "torch",
-  "fire",
-  "hf-transfer"
+  "torch>=2.2,<2.6",
+  "hf-transfer",
+  "tqdm",
+  "pydantic>=2.13.2",
+  "hydra-core>=1.3.2",
+  "omegaconf>=2.3.0",
+  "wandb>=0.26.0",
+  "matplotlib",
 ]
 
 [project.scripts]
-ri = "ri.cli:cli"
-ri-wrong-preds = "ri.entry_points.get_wrong_predictions:main"
-ri-patch-grid = "ri.entry_points.run_patch_grid:run"
+ri = "ri.main:main"
+
+[[tool.uv.index]]
+name = "pytorch-cu121"
+url = "https://download.pytorch.org/whl/cu121"
+explicit = true
+
+[tool.uv.sources]
+torch = [{ index = "pytorch-cu121", marker = "sys_platform == 'linux' and platform_machine == 'x86_64'" }]
 
 [tool.setuptools]
 include-package-data = true
@@ -34,10 +45,82 @@ include-package-data = true
 include = ["ri", "ri.*"]
 
 [tool.setuptools.package-data]
-"*" = ["*.json"]
+"*" = ["*.json", "*.yaml"]
 
 [project.optional-dependencies]
+analysis = ["spacy>=3.8,<3.9"]
 test = ["pytest>=7", "pytest-cov"]
+
+[dependency-groups]
+dev = [
+  "ruff>=0.6",
+  "mypy>=1.10",
+  "pre-commit>=3.7",
+  "codespell>=2.3",
+  "deptry>=0.20",
+]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+
+[tool.ruff]
+target-version = "py310"
+line-length = 100
+extend-exclude = ["outputs", "wandb", "job_outputs"]
+
+[tool.ruff.lint]
+select = [
+  "E", "W",   # pycodestyle
+  "F",         # pyflakes
+  "I",         # isort
+  "UP",        # pyupgrade
+  "B",         # flake8-bugbear
+  "SIM",       # flake8-simplify
+  "RUF",       # ruff-specific
+  "PL",        # pylint
+  "PERF",      # perflint
+]
+ignore = [
+  "E501",      # line length (formatter handles it)
+  "PLR0913",   # too many arguments
+  "PLR2004",   # magic values
+  "B008",      # function calls in defaults (fire CLI pattern)
+  "PERF203",   # try/except in loop (common pattern for per-sample error handling)
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["PLR2004", "S101"]
+# Hydra dispatcher uses lazy imports per task branch to keep startup fast.
+"ri/main.py" = ["PLC0415"]
+
+[tool.ruff.lint.pylint]
+max-branches = 35
+max-returns = 15
+max-statements = 150
+
+[tool.mypy]
+python_version = "3.10"
+ignore_missing_imports = true
+check_untyped_defs = false
+warn_redundant_casts = true
+warn_unused_ignores = true
+exclude = ["outputs/", "wandb/", "job_outputs/"]
+
+[tool.codespell]
+skip = "*.lock,*.json,./.git,./outputs,./wandb,./job_outputs"
+ignore-words-list = "nd,te,ans"
+
+[tool.deptry]
+known_first_party = ["ri"]
+# Transitive runtime deps (pulled by transformers/torch, but kept explicit for reproducibility).
+# pytest / pytest-cov live under [project.optional-dependencies].test — deptry does not read extras.
+ignore_notebooks = true
+
+[tool.deptry.per_rule_ignores]
+DEP002 = [
+  "accelerate",
+  "bitsandbytes",
+  "hf-transfer",
+  "pytest",
+  "pytest-cov",
+]

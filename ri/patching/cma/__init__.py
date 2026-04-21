@@ -1,15 +1,9 @@
 from .pipeline import compute_gold_label_probability
-from .runner import (
-    CausalMediationRunner,
-    PatchPositionAnalyzer,
-    main,
-    run_cma,
-)
+from .runner import CausalMediationRunner, PatchPositionAnalyzer, run_cma
 
 __all__ = [
-    "compute_gold_label_probability",
     "CausalMediationRunner",
     "PatchPositionAnalyzer",
+    "compute_gold_label_probability",
     "run_cma",
-    "main",
 ]

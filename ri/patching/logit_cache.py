@@ -3,23 +3,22 @@ from __future__ import annotations
 import hashlib
 import json
 import os
-from dataclasses import dataclass
-from typing import List, Optional
+import shutil
 
 import torch
+from pydantic import BaseModel, Field
 
 
-@dataclass
-class LogitCacheConfig:
+class LogitCacheConfig(BaseModel):
     """Configuration for logit caching."""
 
     cache_dir: str
-    sample_idx: int
+    sample_idx: int = Field(ge=0)
     source_model_name: str
     target_model_name: str
     source_dataset: str
     target_dataset: str
-    max_gen_len: int
+    max_gen_len: int = Field(gt=0)
     seed: int
     src_prompt_template: str
     tgt_prompt_template: str
@@ -90,7 +89,7 @@ class LogitCache:
         self,
         src_pos: int,
         device: torch.device,
-    ) -> Optional[torch.Tensor]:
+    ) -> torch.Tensor | None:
         """
         Load cached logits for a source position.
 
@@ -114,7 +113,7 @@ class LogitCache:
         src_pos: int,
         logits: torch.Tensor,
         num_layers: int,
-        target_positions: List[int],
+        target_positions: list[int],
     ) -> None:
         """
         Save logits for a source position.
@@ -143,8 +142,6 @@ class LogitCache:
 
     def clear_cache(self) -> None:
         """Remove all cached files for this configuration."""
-        import shutil
-
         if os.path.exists(self.cache_path):
             shutil.rmtree(self.cache_path)
 

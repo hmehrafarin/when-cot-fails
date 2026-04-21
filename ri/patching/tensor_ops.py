@@ -1,9 +1,10 @@
 from __future__ import annotations
 
-from typing import Any, Dict, List, Sequence, Tuple
+from collections.abc import Sequence
+from typing import Any
 
 
-def left_pad_offsets(tokenized_batch) -> List[int]:
+def left_pad_offsets(tokenized_batch) -> list[int]:
     """
     Compute per-sample left-padding offsets given a tokenized batch
     (expects keys: 'input_ids', 'attention_mask').
@@ -11,22 +12,18 @@ def left_pad_offsets(tokenized_batch) -> List[int]:
     """
     ids_list = tokenized_batch["input_ids"]
     mask_list = tokenized_batch["attention_mask"]
-    offsets: List[int] = []
-    for ids, mask in zip(ids_list, mask_list):
+    offsets: list[int] = []
+    for ids, mask in zip(ids_list, mask_list, strict=False):
         total = len(ids)
-        if hasattr(mask, "sum"):
-            valid = int(mask.sum().item())
-        else:
-            valid = int(sum(mask))
+        valid = int(mask.sum().item()) if hasattr(mask, "sum") else int(sum(mask))
         offsets.append(total - valid)
     return offsets
 
 
-def mask_to_positions(mask_row) -> List[int]:
+def mask_to_positions(mask_row) -> list[int]:
     """Return absolute indices where the attention mask denotes real tokens."""
-    mask_list = mask_row.tolist() if hasattr(
-        mask_row, "tolist") else list(mask_row)
-    positions: List[int] = []
+    mask_list = mask_row.tolist() if hasattr(mask_row, "tolist") else list(mask_row)
+    positions: list[int] = []
     for idx, value in enumerate(mask_list):
         try:
             if int(value):
@@ -36,7 +33,7 @@ def mask_to_positions(mask_row) -> List[int]:
     return positions
 
 
-def add_offsets_to_positions(ti_batch: List[List[Dict[str, Any]]], offsets: List[int]) -> None:
+def add_offsets_to_positions(ti_batch: list[list[dict[str, Any]]], offsets: list[int]) -> None:
     for i, imp_tokens in enumerate(ti_batch):
         off = offsets[i] if i < len(offsets) else 0
         for item in imp_tokens:
@@ -44,17 +41,16 @@ def add_offsets_to_positions(ti_batch: List[List[Dict[str, Any]]], offsets: List
 
 
 def build_word_span_map(
-    imp_tokens: List[Dict[str, Any]],
+    imp_tokens: list[dict[str, Any]],
     input_ids_row,
     attention_mask_row,
     tokenizer,
-) -> Dict[int, Dict[str, Any]]:
+) -> dict[int, dict[str, Any]]:
     """Map the starting token index of each importance entry to its token span."""
     if not imp_tokens:
         return {}
 
-    ids_list = input_ids_row.tolist() if hasattr(
-        input_ids_row, "tolist") else list(input_ids_row)
+    ids_list = input_ids_row.tolist() if hasattr(input_ids_row, "tolist") else list(input_ids_row)
     mask_list = (
         attention_mask_row.tolist()
         if hasattr(attention_mask_row, "tolist")
@@ -67,7 +63,7 @@ def build_word_span_map(
     valid_end = seq_len
 
     ordered = sorted(imp_tokens, key=lambda item: int(item.get("pos", 0)))
-    spans: Dict[int, Dict[str, Any]] = {}
+    spans: dict[int, dict[str, Any]] = {}
 
     for idx, item in enumerate(ordered):
         start = int(item.get("pos", 0))
@@ -75,7 +71,7 @@ def build_word_span_map(
             continue
 
         next_start = valid_end
-        for follow in ordered[idx + 1:]:
+        for follow in ordered[idx + 1 :]:
             candidate = int(follow.get("pos", next_start))
             if candidate > start:
                 next_start = candidate
@@ -89,8 +85,7 @@ def build_word_span_map(
         if not segment_ids:
             continue
 
-        decoded = tokenizer.decode(
-            segment_ids, clean_up_tokenization_spaces=False)
+        decoded = tokenizer.decode(segment_ids, clean_up_tokenization_spaces=False)
         spans[start] = {
             "start": start,
             "end": end,
@@ -108,7 +103,7 @@ def _find_subsequence(haystack: Sequence[int], needle: Sequence[int]) -> int:
     if limit <= 0:
         return -1
     for start in range(limit):
-        if list(haystack[start:start + len(needle)]) == list(needle):
+        if list(haystack[start : start + len(needle)]) == list(needle):
             return start
     return -1
 
@@ -117,7 +112,7 @@ def compute_core_token_positions(
     tokenized_batch,
     core_texts: Sequence[str],
     tokenizer,
-) -> Tuple[List[List[int]], List[int]]:
+) -> tuple[list[list[int]], list[int]]:
     """
     Derive absolute token indices for the question+answer portion of each prompt.
 
@@ -141,24 +136,20 @@ def compute_core_token_positions(
     input_rows = tokenized_batch["input_ids"]
     mask_rows = tokenized_batch["attention_mask"]
 
-    all_positions: List[List[int]] = []
-    start_offsets: List[int] = []
+    all_positions: list[list[int]] = []
+    start_offsets: list[int] = []
 
-    for idx, (ids_row, mask_row) in enumerate(zip(input_rows, mask_rows)):
+    for idx, (ids_row, mask_row) in enumerate(zip(input_rows, mask_rows, strict=False)):
         ids_list = ids_row.tolist() if hasattr(ids_row, "tolist") else list(ids_row)
-        if hasattr(mask_row, "sum"):
-            valid_len = int(mask_row.sum().item())
-        else:
-            valid_len = int(sum(mask_row))
+        valid_len = int(mask_row.sum().item()) if hasattr(mask_row, "sum") else int(sum(mask_row))
         total_len = len(ids_list)
         left_pad = total_len - valid_len
-        valid_ids = ids_list[left_pad:left_pad + valid_len]
+        valid_ids = ids_list[left_pad : left_pad + valid_len]
 
         core_text = ""
         if idx < len(core_texts) and isinstance(core_texts[idx], str):
             core_text = core_texts[idx]
-        core_ids = tokenizer.encode(
-            core_text, add_special_tokens=False) if core_text else []
+        core_ids = tokenizer.encode(core_text, add_special_tokens=False) if core_text else []
 
         if not core_ids:
             all_positions.append([])

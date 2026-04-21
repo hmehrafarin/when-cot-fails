@@ -1,4 +1,5 @@
-from typing import Any, Iterable, List, Optional, Sequence
+from collections.abc import Iterable, Sequence
+from typing import Any
 
 import torch
 
@@ -16,8 +17,7 @@ def strip_llama_default_metadata(tokenizer: Any) -> None:
         return
 
     lines = template.splitlines(keepends=True)
-    cleaned = [line for line in lines if not any(
-        marker in line for marker in markers)]
+    cleaned = [line for line in lines if not any(marker in line for marker in markers)]
     tokenizer.chat_template = "".join(cleaned)
 
 
@@ -38,7 +38,7 @@ def get_pad_id(tokenizer: Any) -> int:
     return 0
 
 
-def _flatten_special_values(values: Any, output: List[str]) -> None:
+def _flatten_special_values(values: Any, output: list[str]) -> None:
     """Recursively flatten special token values."""
     if isinstance(values, str):
         output.append(values)
@@ -52,9 +52,9 @@ def _flatten_special_values(values: Any, output: List[str]) -> None:
             _flatten_special_values(val, output)
 
 
-def _gather_special_tokens(tokenizer: Any) -> List[str]:
+def _gather_special_tokens(tokenizer: Any) -> list[str]:
     """Gather all special tokens from the tokenizer."""
-    tokens: List[str] = []
+    tokens: list[str] = []
     for attr in (
         "special_tokens_map",
         "special_tokens_map_extended",
@@ -66,7 +66,7 @@ def _gather_special_tokens(tokenizer: Any) -> List[str]:
             _flatten_special_values(values, tokens)
     filtered = [tok for tok in tokens if isinstance(tok, str) and tok]
     seen = set()
-    ordered: List[str] = []
+    ordered: list[str] = []
     for tok in filtered:
         if tok not in seen:
             seen.add(tok)
@@ -124,11 +124,11 @@ def build_role_header(tokenizer: Any, role: str) -> str | None:
     return f"{prefix}{start}{role}{end}"
 
 
-def get_eos_token_ids(tokenizer: Any) -> int | List[int]:
+def get_eos_token_ids(tokenizer: Any) -> int | list[int]:
     """
     Return the EOS token id(s) to use for generation.
     """
-    ids: List[int] = []
+    ids: list[int] = []
 
     def _append(val: Any) -> None:
         if isinstance(val, int) and val >= 0:
@@ -171,7 +171,7 @@ def render_prompts(
     *,
     system_prompt: bool = False,
     add_generation_prompt: bool = False,
-) -> List[str]:
+) -> list[str]:
     """
     Render a batch of prompts into the exact text passed to the tokenizer.
     """
@@ -185,13 +185,9 @@ def render_prompts(
             for convo in prompts
         ]
 
-    rendered: List[str] = []
+    rendered: list[str] = []
     for convo in prompts:
-        if (
-            isinstance(convo, (list, tuple))
-            and len(convo) > 1
-            and isinstance(convo[1], dict)
-        ):
+        if isinstance(convo, (list, tuple)) and len(convo) > 1 and isinstance(convo[1], dict):
             rendered.append(convo[1].get("content", ""))
         else:
             rendered.append(str(convo))
@@ -205,8 +201,8 @@ def make_inputs(
     *,
     system_prompt: bool = False,
     add_generation_prompt: bool = False,
-    rendered_prompts: Optional[List[str]] = None,
-    max_length: Optional[int] = None,
+    rendered_prompts: list[str] | None = None,
+    max_length: int | None = None,
 ) -> dict:
     """
     Prepare model inputs (``input_ids`` and ``attention_mask``) for a batch of prompts.
@@ -225,10 +221,9 @@ def make_inputs(
             add_generation_prompt=add_generation_prompt,
         )
 
-    add_special_tokens = False if system_prompt else True
+    add_special_tokens = not system_prompt
     token_lists = [
-        tokenizer.encode(p, add_special_tokens=add_special_tokens)
-        for p in rendered_prompts
+        tokenizer.encode(p, add_special_tokens=add_special_tokens) for p in rendered_prompts
     ]
     maxlen = max(len(toks) for toks in token_lists)
     if max_length is not None:
@@ -236,11 +231,8 @@ def make_inputs(
 
     pad_id = get_pad_id(tokenizer)
 
-    input_ids = [[pad_id] * (maxlen - len(toks)) +
-                 toks for toks in token_lists]
-    attention_mask = [
-        [0] * (maxlen - len(toks)) + [1] * len(toks) for toks in token_lists
-    ]
+    input_ids = [[pad_id] * (maxlen - len(toks)) + toks for toks in token_lists]
+    attention_mask = [[0] * (maxlen - len(toks)) + [1] * len(toks) for toks in token_lists]
 
     tensor_kwargs = {}
     if device:

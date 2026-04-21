@@ -44,6 +44,7 @@ DEFAULT_MAX_GEN_LEN: int = 400
 # Legacy compatibility: Constants class
 # --------------------------------------------------------------------------- #
 
+
 class Constants:
     """
     Legacy configuration class for backwards compatibility.

@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from typing import Any
 
-from datasets import load_dataset
 import torch
+from datasets import load_dataset
 
 
 def get_dataset(dataset_name: str) -> Any:

@@ -1,21 +1,23 @@
 from __future__ import annotations
 
 import math
-from typing import Any, Dict
+from typing import Any
 
 import pandas as pd
 from tqdm import tqdm
 
-from ri.config.settings import Constants
-from ri.core.model import ModelAndTokenizer
-from ri.prompts.prompter import Prompter
 from ri.common import (
     choose_torch_dtype,
     get_dataset,
     prepare_batch_data,
     set_random_seed,
 )
+from ri.core.model import ModelAndTokenizer
+from ri.prompts.prompter import Prompter
+from ri.settings.settings import Constants
+from ri.tracking import ExperimentTracker
 from ri.utils.extraction import extract_answer
+
 from .config import EvaluationConfig
 from .pipeline import generate_batch_outputs
 
@@ -24,17 +26,18 @@ def run_evaluation(
     model_name: str,
     dataset: str,
     prompt_template: str,
-    steps: Optional[int],
     batch_size: int,
     max_gen_len: int,
     seed: int,
     output_file: str,
+    extraction_mode: str = "flexible",
+    tracker: ExperimentTracker | None = None,
 ) -> None:
     config = EvaluationConfig(
         batch_size=batch_size,
         max_gen_len=max_gen_len,
-        steps=steps,
         seed=seed,
+        extraction_mode=extraction_mode,
     )
 
     runner = EvaluationRunner(
@@ -44,7 +47,7 @@ def run_evaluation(
         config=config,
     )
 
-    runner.run(output_file)
+    runner.run(output_file, tracker=tracker)
 
 
 class EvaluationRunner:
@@ -99,8 +102,8 @@ class EvaluationRunner:
             "Answer_num": numeric_answers,
         }
 
-    def run(self, output_file: str) -> None:
-        results = {
+    def run(self, output_file: str, tracker: ExperimentTracker | None = None) -> None:
+        results: dict[str, list[Any]] = {
             "Input": [],
             "question": [],
             "answer": [],
@@ -109,18 +112,29 @@ class EvaluationRunner:
             "Generated Answer_cot": [],
         }
 
-        num_batches = math.ceil(
-            len(self.data) / self.config.batch_size
-        )
+        num_batches = math.ceil(len(self.data) / self.config.batch_size)
         for batch_idx in tqdm(range(num_batches), desc="Evaluating"):
             batch_res = self._run_single_batch(batch_idx)
             results["question"].extend(batch_res["questions"])
             results["answer"].extend(batch_res["answers"])
-            results["Generated Answer_num"].extend(
-                batch_res["Generated Answer_num"])
-            results["Generated Answer_cot"].extend(
-                batch_res["Generated Answer_cot"])
+            results["Generated Answer_num"].extend(batch_res["Generated Answer_num"])
+            results["Generated Answer_cot"].extend(batch_res["Generated Answer_cot"])
             results["Input"].extend(batch_res["Input"])
             results["Answer_num"].extend(batch_res["Answer_num"])
 
-        pd.DataFrame(results).to_json(output_file, orient="records")
+        df = pd.DataFrame(results)
+        df.to_json(output_file, orient="records")
+
+        if tracker is not None and tracker.is_enabled:
+            tracker.log_config(self.config)
+            tracker.log_dataframe("eval_samples", df)
+            n_correct = int(
+                (df["Answer_num"].astype(str) == df["Generated Answer_num"].astype(str)).sum()
+            )
+            tracker.log_metrics(
+                {
+                    "n_correct": n_correct,
+                    "n_samples": len(df),
+                    "accuracy": n_correct / max(len(df), 1),
+                }
+            )

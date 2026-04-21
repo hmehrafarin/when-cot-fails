@@ -40,7 +40,6 @@ def run_postprocess(
     sweep_root: str,
     output_file: str,
     model_name: str,
-    alignment_model: str,
     output_schema: str = "full_results",
     pe_root: str | None = None,
     eval_json: str | None = None,
@@ -56,7 +55,6 @@ def run_postprocess(
         sweep_root=sweep_root,
         output_file=output_file,
         model_name=model_name,
-        alignment_model=alignment_model,
         output_schema=output_schema,
         pe_root=pe_root,
         eval_json=eval_json,
@@ -76,7 +74,6 @@ def run_full_results(
     sweep_root: str,
     output_file: str,
     model_name: str,
-    alignment_model: str,
     sample_idx: int = 0,
     spacy_model: str = "en_core_web_sm",
     generation_other_label: str | None = None,
@@ -89,7 +86,6 @@ def run_full_results(
         sweep_root=sweep_root,
         output_file=output_file,
         model_name=model_name,
-        alignment_model=alignment_model,
         output_schema="full_results",
         sample_idx=sample_idx,
         spacy_model=spacy_model,
@@ -109,6 +105,7 @@ class PostprocessRunner:
         self.sweep_root = Path(config.sweep_root)
         self.pe_root = Path(config.pe_root) if config.pe_root else None
         self.eval_json = Path(config.eval_json) if config.eval_json else None
+        self.alignment_model = _alignment_model_for_model_name(config.model_name)
         self.output_file = Path(config.output_file)
         self.source_tokens_file = _derive_sidecar_path(
             self.output_file,
@@ -240,7 +237,7 @@ class PostprocessRunner:
                 sample_dir=sample_dir,
                 nlp=nlp,
                 tokenizer=tokenizer,
-                alignment_model=self.config.alignment_model,
+                alignment_model=self.alignment_model,
                 generation_other_label=generation_other_label,
                 token_len_cache=token_len_cache,
             )
@@ -261,7 +258,7 @@ class PostprocessRunner:
                 eval_item=eval_item,
                 nlp=nlp,
                 tokenizer=tokenizer,
-                alignment_model=self.config.alignment_model,
+                alignment_model=self.alignment_model,
                 generation_other_label=generation_other_label,
                 token_len_cache=token_len_cache,
             )
@@ -275,6 +272,18 @@ def _effective_generation_other_label(output_schema: str, configured_label: str 
     if output_schema == "published_export":
         return "other"
     return "noise"
+
+
+def _alignment_model_for_model_name(model_name: str) -> str:
+    name = model_name.strip().lower()
+    if "llama" in name:
+        return "llama"
+    if "qwen" in name:
+        return "qwen"
+    raise ValueError(
+        "Postprocess alignment only supports Llama and Qwen tokenizers. "
+        f"Could not derive alignment family from model_name={model_name!r}."
+    )
 
 
 def _output_fieldnames(output_schema: str) -> list[str]:

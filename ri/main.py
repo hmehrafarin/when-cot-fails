@@ -167,7 +167,6 @@ def _dispatch(cfg: DictConfig, task: str, tracker: ExperimentTracker) -> None:
             sweep_root=cfg.task.sweep_root,
             output_file=cfg.task.output_file,
             model_name=cfg.model.target_model_name,
-            alignment_model=cfg.task.alignment_model,
             output_schema=cfg.task.output_schema,
             pe_root=cfg.task.pe_root,
             eval_json=cfg.task.eval_json,

@@ -124,7 +124,6 @@ For a single-sample sweep written to a flat directory:
 ```bash
 uv run ri task=full_results \
     task.sweep_root=patch_pos_sweep_results \
-    task.alignment_model=qwen \
     task.output_schema=full_results \
     task.sample_idx=0 \
     task.output_file=outputs/full_results_sample0.csv
@@ -151,7 +150,6 @@ uv run ri task=patch_position_sweep \
 # Then aggregate them into a single reproducible table
 uv run ri task=full_results \
     task.sweep_root=patch_pos_sweep_results \
-    task.alignment_model=qwen \
     task.output_schema=full_results \
     task.output_file=outputs/full_results.csv
 ```
@@ -166,8 +164,7 @@ uv run ri task=full_results \
 Useful overrides:
 
 - `task.output_schema=full_results|published_export` — selects the output schema
-- `model.target_model_name` — postprocess loads the tokenizer from this model automatically
-- `task.alignment_model=llama|qwen` — required; selects the token-alignment path used for entity-role projection
+- `model.target_model_name` — postprocess loads the tokenizer from this model and derives the token-alignment path from it
 - `task.pe_root` — required when `task.output_schema=published_export`; PE root with `sample_<idx>/source_<pos>.json`
 - `task.eval_json` — optional, but recommended for exact published-export alignment; original CoT eval JSON
 - `task.spacy_model` — spaCy pipeline used for NER spans; defaults to `en_core_web_sm`
@@ -175,7 +172,7 @@ Useful overrides:
 - `task.source_tokens_file`, `task.entity_codes_file`, `task.behavior_codes_file` — override sidecar output paths
 - `task.progress_every=0` — disable progress logging
 
-Only `entity_role` projection depends on `task.alignment_model`. The behaviour taxonomy, numeric correctness, and step segmentation stay the same. PE joins are only used when `task.output_schema=published_export`.
+Only `entity_role` projection depends on the model-specific token alignment derived from `model.target_model_name`. The behaviour taxonomy, numeric correctness, and step segmentation stay the same. PE joins are only used when `task.output_schema=published_export`.
 
 ### Recreate `llama_v3.csv`
 
@@ -202,7 +199,6 @@ uv run --python 3.13 ri task=full_results \
     task.sweep_root="/abs/path/patch/patch_pos_sweep" \
     task.pe_root="/abs/path/PE/pe_output" \
     task.eval_json="/abs/path/eval/single_batch_output_cot.json" \
-    task.alignment_model=llama \
     task.output_schema=published_export \
     task.output_file=outputs/llama_v3.csv
 ```
@@ -215,7 +211,6 @@ uv run --python 3.13 ri task=full_results \
     task.sweep_root="/abs/path/patch/patch_pos_sweep" \
     task.pe_root="/abs/path/PE/pe_output" \
     task.eval_json="/abs/path/eval/single_batch_output_cot.json" \
-    task.alignment_model=llama \
     task.output_schema=published_export \
     task.output_file=outputs/llama_v3_edited.csv \
     task.generation_other_label=noise

@@ -7,7 +7,6 @@ class PostprocessConfig(BaseModel):
     sweep_root: str = Field(min_length=1)
     output_file: str = Field(min_length=1)
     model_name: str = Field(min_length=1)
-    alignment_model: str = Field(min_length=1)
     output_schema: str = Field(default="full_results", min_length=1)
     pe_root: str | None = None
     eval_json: str | None = None
@@ -23,7 +22,6 @@ class PostprocessConfig(BaseModel):
         "sweep_root",
         "output_file",
         "model_name",
-        "alignment_model",
         "output_schema",
         "spacy_model",
         mode="before",
@@ -33,14 +31,6 @@ class PostprocessConfig(BaseModel):
         text = str(value).strip()
         if not text:
             raise ValueError("Expected a non-empty string value")
-        return text
-
-    @field_validator("alignment_model", mode="before")
-    @classmethod
-    def _validate_alignment_model(cls, value: object) -> str:
-        text = str(value).strip().lower()
-        if text not in {"llama", "qwen"}:
-            raise ValueError("alignment_model must be either 'llama' or 'qwen'")
         return text
 
     @field_validator("output_schema", mode="before")

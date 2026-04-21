@@ -51,6 +51,7 @@ def generate_batch_outputs(
         output,
         tokenizer=mt.tokenizer,
         template_name=getattr(prompter, "template_name", None),
+        extraction_mode=config.extraction_mode,
     )
 
     rendered_input: list[str | None] = [convo[-1]["content"] if convo else "" for convo in convos]

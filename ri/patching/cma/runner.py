@@ -6,7 +6,7 @@ from typing import Any
 import pandas as pd
 from tqdm import tqdm
 
-from ri.patching.config import PatchConfig
+from ri.patching.config import ExtractionMode, PatchConfig
 from ri.patching.runner import PatchRunner
 from ri.settings import DEFAULT_MODEL_NAME
 from ri.tracking import ExperimentTracker
@@ -123,6 +123,7 @@ def run_cma(
     max_gen_len: int = 400,
     patch_position: int | None = None,
     gen_cache_dir: str | None = None,
+    extraction_mode: ExtractionMode = "flexible",
     output_file: str = "patch_position_analysis.json",
     tracker: ExperimentTracker | None = None,
 ) -> None:
@@ -137,6 +138,7 @@ def run_cma(
         hs_selection=hs_selection,
         include_all_tokens=include_all_tokens,
         gen_cache_dir=gen_cache_dir,
+        extraction_mode=extraction_mode,
     )
 
     runner = CausalMediationRunner(

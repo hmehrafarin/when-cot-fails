@@ -353,6 +353,7 @@ class PatchEffectAnalyzer(CausalMediationRunner):
             target_baseline_text,
             tokenizer=target_tokenizer,
             template_name=getattr(self.tgt_prompter, "template_name", None),
+            extraction_mode=self.config.extraction_mode,
         )
         target_answer_num = (
             target_baseline_extracted["answer_num"][0]

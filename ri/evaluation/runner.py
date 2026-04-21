@@ -30,12 +30,14 @@ def run_evaluation(
     max_gen_len: int,
     seed: int,
     output_file: str,
+    extraction_mode: str = "flexible",
     tracker: ExperimentTracker | None = None,
 ) -> None:
     config = EvaluationConfig(
         batch_size=batch_size,
         max_gen_len=max_gen_len,
         seed=seed,
+        extraction_mode=extraction_mode,
     )
 
     runner = EvaluationRunner(

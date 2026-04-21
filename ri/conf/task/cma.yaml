@@ -6,4 +6,5 @@ hs_selection: -1
 include_all_tokens: false
 patch_from_generation: false
 patch_position: null
+extraction_mode: flexible
 output_file: patch_position_analysis.json

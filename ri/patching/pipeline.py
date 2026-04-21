@@ -118,6 +118,7 @@ def _run_target_generation_with_patch(
         output,
         tokenizer=target_tokenizer,
         template_name=getattr(tgt_prompter, "template_name", None),
+        extraction_mode=cfg.extraction_mode,
     )
 
     result_dict: dict[str, Any] = {
@@ -204,6 +205,7 @@ def get_source_hidden_states(
                 output,
                 tokenizer=source_mt.tokenizer,  # Use source tokenizer for decoding
                 template_name=getattr(tgt_prompter, "template_name", None),
+                extraction_mode=cfg.extraction_mode,
             )
 
             hidden_steps = generation.hidden_states or ()

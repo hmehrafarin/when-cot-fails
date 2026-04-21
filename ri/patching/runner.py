@@ -13,7 +13,7 @@ from ri.settings.settings import Constants
 from ri.tracking import ExperimentTracker
 from ri.utils.extraction import extract_answer
 
-from .config import PatchConfig
+from .config import ExtractionMode, PatchConfig
 from .pipeline import patch_and_generate
 
 
@@ -198,6 +198,7 @@ def run_patch(
     hs_selection: int,
     include_all_tokens: bool = False,
     gen_cache_dir: str | None = None,
+    extraction_mode: ExtractionMode = "flexible",
     output_file: str,
     tracker: ExperimentTracker | None = None,
 ) -> None:
@@ -209,6 +210,7 @@ def run_patch(
         hs_selection=hs_selection,
         include_all_tokens=include_all_tokens,
         gen_cache_dir=gen_cache_dir,
+        extraction_mode=extraction_mode,
     )
 
     runner = PatchRunner(

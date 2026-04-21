@@ -59,6 +59,7 @@ def _dispatch(cfg: DictConfig, task: str, tracker: ExperimentTracker) -> None:
             max_gen_len=cfg.task.max_gen_len,
             seed=cfg.seed,
             output_file=cfg.task.output_file,
+            extraction_mode=cfg.task.get("extraction_mode", "flexible"),
             tracker=tracker,
         )
 
@@ -82,6 +83,7 @@ def _dispatch(cfg: DictConfig, task: str, tracker: ExperimentTracker) -> None:
             include_all_tokens=cfg.task.include_all_tokens,
             patch_from_generation=cfg.task.patch_from_generation,
             gen_cache_dir=cfg.task.gen_cache_dir,
+            extraction_mode=cfg.task.get("extraction_mode", "flexible"),
             output_file=cfg.task.output_file,
             tracker=tracker,
         )
@@ -104,6 +106,7 @@ def _dispatch(cfg: DictConfig, task: str, tracker: ExperimentTracker) -> None:
             patch_from_generation=cfg.task.patch_from_generation,
             max_gen_len=cfg.task.max_gen_len,
             patch_position=cfg.task.patch_position,
+            extraction_mode=cfg.task.get("extraction_mode", "flexible"),
             output_file=cfg.task.output_file,
             tracker=tracker,
         )

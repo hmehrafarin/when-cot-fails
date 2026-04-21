@@ -8,4 +8,5 @@ include_all_tokens: false
 patch_from_generation: false
 patch_position: null
 gen_cache_dir: null
+extraction_mode: flexible
 output_file: output_patched.json

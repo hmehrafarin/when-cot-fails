@@ -255,6 +255,7 @@ def get_all_hidden_states_from_generation(
     gen_cache_dir: str | None = None,
     tgt_template_name: str | None = None,
     batch_size: int = 1,
+    extraction_mode: str = "flexible",
 ) -> tuple[torch.Tensor, list[list[int]], list[str]]:
     cached_data = None
 
@@ -293,6 +294,7 @@ def get_all_hidden_states_from_generation(
             output,
             tokenizer=tokenizer,
             template_name=tgt_template_name,
+            extraction_mode=extraction_mode,
         )
 
         hidden_steps = generation.hidden_states or ()
@@ -395,6 +397,7 @@ def analyze_patch_positions(
                 gen_cache_dir=getattr(cfg, "gen_cache_dir", None),
                 tgt_template_name=getattr(tgt_prompter, "template_name", None),
                 batch_size=batch_size,
+                extraction_mode=cfg.extraction_mode,
             )
         )
         candidates = list(range(len(generated_token_ids[0]))) if generated_token_ids else []
@@ -458,6 +461,7 @@ def analyze_patch_positions(
         target_baseline_text,
         tokenizer=target_tokenizer,
         template_name=getattr(tgt_prompter, "template_name", None),
+        extraction_mode=cfg.extraction_mode,
     )
     target_baseline_answer_num = (
         target_baseline_extracted["answer_num"][0]

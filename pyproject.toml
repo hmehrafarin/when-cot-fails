@@ -39,6 +39,7 @@ include = ["ri", "ri.*"]
 "*" = ["*.json", "*.yaml"]
 
 [project.optional-dependencies]
+analysis = ["spacy>=3.8,<3.9"]
 test = ["pytest>=7", "pytest-cov"]
 
 [dependency-groups]

@@ -6,7 +6,7 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 class PostprocessConfig(BaseModel):
     sweep_root: str = Field(min_length=1)
     output_file: str = Field(min_length=1)
-    tokenizer_name: str = Field(min_length=1)
+    model_name: str = Field(min_length=1)
     alignment_model: str = Field(min_length=1)
     output_schema: str = Field(default="full_results", min_length=1)
     pe_root: str | None = None
@@ -22,7 +22,7 @@ class PostprocessConfig(BaseModel):
     @field_validator(
         "sweep_root",
         "output_file",
-        "tokenizer_name",
+        "model_name",
         "alignment_model",
         "output_schema",
         "spacy_model",

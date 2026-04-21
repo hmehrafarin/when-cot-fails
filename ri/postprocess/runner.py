@@ -39,7 +39,7 @@ def run_postprocess(
     *,
     sweep_root: str,
     output_file: str,
-    tokenizer_name: str,
+    model_name: str,
     alignment_model: str,
     output_schema: str = "full_results",
     pe_root: str | None = None,
@@ -55,7 +55,7 @@ def run_postprocess(
     config = PostprocessConfig(
         sweep_root=sweep_root,
         output_file=output_file,
-        tokenizer_name=tokenizer_name,
+        model_name=model_name,
         alignment_model=alignment_model,
         output_schema=output_schema,
         pe_root=pe_root,
@@ -75,7 +75,7 @@ def run_full_results(
     *,
     sweep_root: str,
     output_file: str,
-    tokenizer_name: str,
+    model_name: str,
     alignment_model: str,
     sample_idx: int = 0,
     spacy_model: str = "en_core_web_sm",
@@ -88,7 +88,7 @@ def run_full_results(
     run_postprocess(
         sweep_root=sweep_root,
         output_file=output_file,
-        tokenizer_name=tokenizer_name,
+        model_name=model_name,
         alignment_model=alignment_model,
         output_schema="full_results",
         sample_idx=sample_idx,
@@ -135,7 +135,7 @@ class PostprocessRunner:
             raise FileNotFoundError(f"Eval JSON does not exist: {self.eval_json}")
 
         nlp = _load_nlp(self.config.spacy_model)
-        tokenizer = AutoTokenizer.from_pretrained(self.config.tokenizer_name, use_fast=True)
+        tokenizer = AutoTokenizer.from_pretrained(self.config.model_name, use_fast=True)
         token_len_cache: dict[str, int] = {}
         generation_other_label = _effective_generation_other_label(
             self.config.output_schema,

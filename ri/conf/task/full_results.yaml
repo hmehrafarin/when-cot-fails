@@ -3,7 +3,6 @@ sweep_root: patch_pos_sweep_results
 pe_root: null
 eval_json: null
 output_file: outputs/full_results.csv
-tokenizer_name: ${model.target_model_name}
 alignment_model: ???
 output_schema: full_results
 sample_idx: 0

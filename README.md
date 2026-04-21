@@ -166,7 +166,7 @@ uv run ri task=full_results \
 Useful overrides:
 
 - `task.output_schema=full_results|published_export` — selects the output schema
-- `task.tokenizer_name` — tokenizer used for the token-length columns; defaults to `${model.target_model_name}`
+- `model.target_model_name` — postprocess loads the tokenizer from this model automatically
 - `task.alignment_model=llama|qwen` — required; selects the token-alignment path used for entity-role projection
 - `task.pe_root` — required when `task.output_schema=published_export`; PE root with `sample_<idx>/source_<pos>.json`
 - `task.eval_json` — optional, but recommended for exact published-export alignment; original CoT eval JSON

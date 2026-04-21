@@ -169,7 +169,7 @@ def _dispatch(cfg: DictConfig, task: str, tracker: ExperimentTracker) -> None:
             tokenizer_name=cfg.task.tokenizer_name,
             alignment_model=cfg.task.alignment_model,
             output_schema=cfg.task.output_schema,
-            ie_root=cfg.task.ie_root,
+            pe_root=cfg.task.pe_root,
             eval_json=cfg.task.eval_json,
             sample_idx=cfg.task.sample_idx,
             spacy_model=cfg.task.spacy_model,

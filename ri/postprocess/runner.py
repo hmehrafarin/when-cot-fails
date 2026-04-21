@@ -42,7 +42,7 @@ def run_postprocess(
     tokenizer_name: str,
     alignment_model: str,
     output_schema: str = "full_results",
-    ie_root: str | None = None,
+    pe_root: str | None = None,
     eval_json: str | None = None,
     sample_idx: int = 0,
     spacy_model: str = "en_core_web_sm",
@@ -58,7 +58,7 @@ def run_postprocess(
         tokenizer_name=tokenizer_name,
         alignment_model=alignment_model,
         output_schema=output_schema,
-        ie_root=ie_root,
+        pe_root=pe_root,
         eval_json=eval_json,
         sample_idx=sample_idx,
         spacy_model=spacy_model,
@@ -107,7 +107,7 @@ class PostprocessRunner:
     def __init__(self, config: PostprocessConfig):
         self.config = config
         self.sweep_root = Path(config.sweep_root)
-        self.ie_root = Path(config.ie_root) if config.ie_root else None
+        self.pe_root = Path(config.pe_root) if config.pe_root else None
         self.eval_json = Path(config.eval_json) if config.eval_json else None
         self.output_file = Path(config.output_file)
         self.source_tokens_file = _derive_sidecar_path(
@@ -129,8 +129,8 @@ class PostprocessRunner:
     def run(self) -> None:
         if not self.sweep_root.exists():
             raise FileNotFoundError(f"Sweep root does not exist: {self.sweep_root}")
-        if self.ie_root is not None and not self.ie_root.exists():
-            raise FileNotFoundError(f"IE root does not exist: {self.ie_root}")
+        if self.pe_root is not None and not self.pe_root.exists():
+            raise FileNotFoundError(f"PE root does not exist: {self.pe_root}")
         if self.eval_json is not None and not self.eval_json.exists():
             raise FileNotFoundError(f"Eval JSON does not exist: {self.eval_json}")
 
@@ -246,7 +246,7 @@ class PostprocessRunner:
             )
 
         if self.config.output_schema == "published_export":
-            assert self.ie_root is not None
+            assert self.pe_root is not None
             eval_item = None
             if eval_items is not None:
                 if sample_idx >= len(eval_items):
@@ -257,7 +257,7 @@ class PostprocessRunner:
             return _load_published_export_sample(
                 sample_idx=sample_idx,
                 sample_dir=sample_dir,
-                ie_dir=self.ie_root / f"sample_{sample_idx}",
+                pe_dir=self.pe_root / f"sample_{sample_idx}",
                 eval_item=eval_item,
                 nlp=nlp,
                 tokenizer=tokenizer,
@@ -374,10 +374,10 @@ def _discover_sample_sources(sweep_root: Path, sample_idx: int) -> list[tuple[in
 
 
 @dataclass(slots=True)
-class IESampleMetadata:
+class PESampleMetadata:
     patched_map: dict[int, str]
     source_target_meta: dict[int, tuple[dict[int, int], list[int]]]
-    ie_map: dict[tuple[int, int, int], float]
+    pe_map: dict[tuple[int, int, int], float]
     cot_text_hint: str
 
 
@@ -500,7 +500,7 @@ def _load_published_export_sample(
     *,
     sample_idx: int,
     sample_dir: Path,
-    ie_dir: Path,
+    pe_dir: Path,
     eval_item: dict[str, Any] | None,
     nlp,
     tokenizer,
@@ -512,8 +512,8 @@ def _load_published_export_sample(
     if not sweep_files:
         raise FileNotFoundError(f"No sweep files found for sample {sample_idx} in {sample_dir}")
 
-    if not ie_dir.exists():
-        raise FileNotFoundError(f"Missing IE directory for sample {sample_idx}: {ie_dir}")
+    if not pe_dir.exists():
+        raise FileNotFoundError(f"Missing PE directory for sample {sample_idx}: {pe_dir}")
 
     canonical_file = _choose_canonical_sweep_file(sweep_files)
     if canonical_file is None:
@@ -529,8 +529,8 @@ def _load_published_export_sample(
         for path in sweep_files
         if SWEEP_FILE_RE.match(path.name)
     }
-    ie_metadata = _load_ie_sample_metadata(ie_dir, requested_targets)
-    cot_text_hint = ie_metadata.cot_text_hint or source_generated_answer
+    pe_metadata = _load_pe_sample_metadata(pe_dir, requested_targets)
+    cot_text_hint = pe_metadata.cot_text_hint or source_generated_answer
     step_meta = _build_step_mapping(token_map, cot_text_hint=cot_text_hint)
     entity_role_map = _build_entity_role_map_for_model(
         token_map,
@@ -588,13 +588,13 @@ def _load_published_export_sample(
             )
             abs_error = abs(pred_num - gold_num) if (is_numeric and gold_num is not None) else float("nan")
             signed_error = pred_num - gold_num if (is_numeric and gold_num is not None) else float("nan")
-            req_to_resolved, resolved_positions = ie_metadata.source_target_meta.get(source_pos, ({}, []))
+            req_to_resolved, resolved_positions = pe_metadata.source_target_meta.get(source_pos, ({}, []))
             target_pos_resolved = _resolve_target_position(
                 target_pos_requested,
                 req_to_resolved,
                 resolved_positions,
             )
-            pe = ie_metadata.ie_map.get((layer, target_pos_resolved, source_pos), float("nan"))
+            pe = pe_metadata.pe_map.get((layer, target_pos_resolved, source_pos), float("nan"))
             group_lengths.setdefault(target_pos_resolved, []).append(generated_len)
             pending_rows.append(
                 {
@@ -603,7 +603,7 @@ def _load_published_export_sample(
                     "target_pos": target_pos_requested,
                     "target_pos_resolved": target_pos_resolved,
                     "source_pos": source_pos,
-                    "patched_token_str": ie_metadata.patched_map.get(
+                    "patched_token_str": pe_metadata.patched_map.get(
                         source_pos,
                         token_map.get(source_pos, item.get("patching_token", "")),
                     ),
@@ -659,8 +659,8 @@ def _sort_sweep_files(sample_dir: Path) -> list[Path]:
     )
 
 
-def _sort_source_ie_files(ie_dir: Path) -> list[Path]:
-    files = [path for path in ie_dir.glob("source_*.json") if re.search(r"source_(\d+)\.json$", path.name)]
+def _sort_source_pe_files(pe_dir: Path) -> list[Path]:
+    files = [path for path in pe_dir.glob("source_*.json") if re.search(r"source_(\d+)\.json$", path.name)]
     return sorted(files, key=lambda path: int(re.search(r"source_(\d+)\.json$", path.name).group(1)))
 
 
@@ -706,14 +706,14 @@ def _maybe_float(value: object) -> float:
         return float("nan")
 
 
-def _load_ie_sample_metadata(ie_dir: Path, requested_targets: set[int]) -> IESampleMetadata:
-    source_files = _sort_source_ie_files(ie_dir)
+def _load_pe_sample_metadata(pe_dir: Path, requested_targets: set[int]) -> PESampleMetadata:
+    source_files = _sort_source_pe_files(pe_dir)
     if not source_files:
-        raise FileNotFoundError(f"No source IE files found in {ie_dir}")
+        raise FileNotFoundError(f"No source PE files found in {pe_dir}")
 
     patched_map: dict[int, str] = {}
     source_target_meta: dict[int, tuple[dict[int, int], list[int]]] = {}
-    ie_map: dict[tuple[int, int, int], float] = {}
+    pe_map: dict[tuple[int, int, int], float] = {}
     cot_text_hint = ""
 
     for source_path in source_files:
@@ -738,18 +738,20 @@ def _load_ie_sample_metadata(ie_dir: Path, requested_targets: set[int]) -> IESam
             for target_pos in requested_targets
         }
 
-        for layer_ie_str, layer_payload in (payload.get("layer_results") or {}).items():
-            layer_patch = int(layer_ie_str) + 1
+        for layer_pe_str, layer_payload in (payload.get("layer_results") or {}).items():
+            layer_patch = int(layer_pe_str) + 1
             for item in (layer_payload or {}).get("positions", []):
                 target_pos = int(item["target_position"])
                 if target_pos not in needed_resolved_targets:
                     continue
-                ie_map[(layer_patch, target_pos, source_pos)] = _maybe_float(item.get("indirect_effect"))
+                pe_map[(layer_patch, target_pos, source_pos)] = _maybe_float(
+                    item.get("pe", item.get("indirect_effect"))
+                )
 
-    return IESampleMetadata(
+    return PESampleMetadata(
         patched_map=patched_map,
         source_target_meta=source_target_meta,
-        ie_map=ie_map,
+        pe_map=pe_map,
         cot_text_hint=cot_text_hint,
     )
 

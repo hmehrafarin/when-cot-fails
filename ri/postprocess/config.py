@@ -9,7 +9,7 @@ class PostprocessConfig(BaseModel):
     tokenizer_name: str = Field(min_length=1)
     alignment_model: str = Field(min_length=1)
     output_schema: str = Field(default="full_results", min_length=1)
-    ie_root: str | None = None
+    pe_root: str | None = None
     eval_json: str | None = None
     sample_idx: int = 0
     spacy_model: str = Field(default="en_core_web_sm", min_length=1)
@@ -51,7 +51,7 @@ class PostprocessConfig(BaseModel):
             raise ValueError("output_schema must be either 'full_results' or 'published_export'")
         return text
 
-    @field_validator("ie_root", "eval_json", mode="before")
+    @field_validator("pe_root", "eval_json", mode="before")
     @classmethod
     def _strip_optional_text(cls, value: object) -> str | None:
         if value is None:
@@ -71,6 +71,6 @@ class PostprocessConfig(BaseModel):
 
     @model_validator(mode="after")
     def _validate_schema_dependencies(self) -> PostprocessConfig:
-        if self.output_schema == "published_export" and not self.ie_root:
-            raise ValueError("ie_root is required when output_schema='published_export'")
+        if self.output_schema == "published_export" and not self.pe_root:
+            raise ValueError("pe_root is required when output_schema='published_export'")
         return self

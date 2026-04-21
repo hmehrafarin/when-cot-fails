@@ -4,8 +4,8 @@ max_gen_len: 400
 source_layer: -1
 target_layer: -1
 hs_selection: -1
-include_all_tokens: false
-patch_from_generation: false
+include_all_tokens: true
+patch_from_generation: true
 patch_position: null
 gen_cache_dir: null
 extraction_mode: flexible

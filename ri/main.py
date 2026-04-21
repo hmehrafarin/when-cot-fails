@@ -161,30 +161,16 @@ def _dispatch(cfg: DictConfig, task: str, tracker: ExperimentTracker) -> None:
         )
 
     elif task == "full_results":
-        from ri.postprocess.runner import run_full_results
+        from ri.postprocess.runner import run_postprocess
 
-        run_full_results(
+        run_postprocess(
             sweep_root=cfg.task.sweep_root,
             output_file=cfg.task.output_file,
             tokenizer_name=cfg.task.tokenizer_name,
-            sample_idx=cfg.task.sample_idx,
-            spacy_model=cfg.task.spacy_model,
-            generation_other_label=cfg.task.generation_other_label,
-            progress_every=cfg.task.progress_every,
-            source_tokens_file=cfg.task.source_tokens_file,
-            entity_codes_file=cfg.task.entity_codes_file,
-            behavior_codes_file=cfg.task.behavior_codes_file,
-        )
-
-    elif task == "llama_v3":
-        from ri.postprocess.runner import run_llama_v3
-
-        run_llama_v3(
-            sweep_root=cfg.task.sweep_root,
+            alignment_model=cfg.task.alignment_model,
+            output_schema=cfg.task.output_schema,
             ie_root=cfg.task.ie_root,
             eval_json=cfg.task.eval_json,
-            output_file=cfg.task.output_file,
-            tokenizer_name=cfg.task.tokenizer_name,
             sample_idx=cfg.task.sample_idx,
             spacy_model=cfg.task.spacy_model,
             generation_other_label=cfg.task.generation_other_label,

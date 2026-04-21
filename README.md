@@ -16,14 +16,14 @@ Run commands via `uv run` (e.g. `uv run ri ...`), or activate the environment wi
 
 Requires Python 3.10+, PyTorch, and Transformers.
 
-For the `full_results` postprocessing task, install the optional analysis extra and the spaCy English model once:
+For the postprocessing tasks (`full_results`, `llama_export`), install the optional analysis extra and the spaCy English model once:
 
 ```bash
 uv sync --extra analysis
 uv run python -m spacy download en_core_web_sm
 ```
 
-`spaCy` currently publishes wheels through Python 3.13. If your default interpreter is Python 3.14, create the environment with Python 3.13 for `task=full_results`:
+`spaCy` currently publishes wheels through Python 3.13. If your default interpreter is Python 3.14, create the environment with Python 3.13 for these postprocessing tasks:
 
 ```bash
 uv python install 3.13
@@ -38,7 +38,7 @@ All experiments are driven through [Hydra](https://hydra.cc/) configs composed f
 ```
 ri/conf/
 ├── config.yaml          # root — picks one task / model / dataset / tracking
-├── task/                # evaluate, patch, cma, pe_analysis, patch_position_sweep, full_results, llama_v3
+├── task/                # evaluate, patch, cma, pe_analysis, patch_position_sweep, full_results, llama_export
 ├── model/               # llama_8b, qwen_7b
 ├── dataset/             # gsm8k
 └── tracking/            # disabled, wandb
@@ -106,12 +106,12 @@ Both `patch_position_sweep` and `pe_analysis` operate on a single sample (`task.
 
 After generating patch-position sweeps, build the derived analysis table that adds:
 
-- per-source-token v3 spaCy-rule `entity_role` labels
+- per-source-token spaCy-rule `entity_role` labels
 - per-patched-generation `generation_type` behaviour labels
 - step segmentation, numeric correctness, and token-length summary columns
 - sidecar codebooks so the label taxonomy is published with the results
 
-The integrated labeler uses the same v3 taxonomy as the research scripts (`spacy_rules_v3.py`). Because patch-sweep JSON files already contain the canonical source token sequence, the repo projects those v3 labels directly onto the saved patch tokens instead of requiring separate Qwen/Llama wrapper scripts during reproduction.
+The integrated labeler uses the same published taxonomy as the research scripts. Because patch-sweep JSON files already contain the canonical source token sequence, the repo projects those labels directly onto the saved patch tokens instead of requiring separate Qwen/Llama wrapper scripts during reproduction.
 The generation taxonomy follows the downstream analysis artifacts as well: `full_cot`, `semi_cot`, `partial_cot`, `final_only`, `text_only`, `none`, and `noise` by default.
 
 For a single-sample sweep written to a flat directory:
@@ -164,14 +164,14 @@ Useful overrides:
 
 ### Recreate `llama_v3.csv`
 
-Use `task=llama_v3` when you want the publishable Llama-specific export shape rather than the richer generic `full_results` table.
+Use `task=llama_export` when you want the publishable Llama-specific export shape rather than the richer generic `full_results` table.
 
 This task reconstructs:
 
 - the simplified `llama_v3.csv` schema
 - `pe` from IE `indirect_effect` values in `IE/ie_output`
 - `target_pos_resolved` from the IE source metadata
-- v3 spaCy-rule `entity_role` labels projected onto the saved patch tokens
+- spaCy-rule `entity_role` labels projected onto the saved patch tokens
 - the published `generation_type` taxonomy and sidecar codebooks
 
 Required inputs:
@@ -183,18 +183,18 @@ Required inputs:
 Example using the research directory layout:
 
 ```bash
-uv run --python 3.13 ri task=llama_v3 \
+uv run --python 3.13 ri task=llama_export \
     task.sweep_root="/abs/path/patch/patch_pos_sweep" \
     task.ie_root="/abs/path/IE/ie_output" \
     task.eval_json="/abs/path/eval/single_batch_output_cot.json" \
     task.output_file=outputs/llama_v3.csv
 ```
 
-By default, `task=llama_v3` publishes the pre-edit `llama_v3.csv` behaviour labels with `task.generation_other_label=other`.
+By default, `task=llama_export` publishes the pre-edit `llama_v3.csv` behaviour labels with `task.generation_other_label=other`.
 To reproduce the later edited variant (`llama_v3_edited.csv`), rerun with:
 
 ```bash
-uv run --python 3.13 ri task=llama_v3 \
+uv run --python 3.13 ri task=llama_export \
     task.sweep_root="/abs/path/patch/patch_pos_sweep" \
     task.ie_root="/abs/path/IE/ie_output" \
     task.eval_json="/abs/path/eval/single_batch_output_cot.json" \
@@ -202,7 +202,7 @@ uv run --python 3.13 ri task=llama_v3 \
     task.generation_other_label=noise
 ```
 
-`task=llama_v3` writes the same reproducibility sidecars as `task=full_results`:
+`task=llama_export` writes the same reproducibility sidecars as `task=full_results`:
 
 - `*_source_tokens.csv`
 - `*_entity_codes.json`

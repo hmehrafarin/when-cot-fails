@@ -174,54 +174,6 @@ Useful overrides:
 
 Only `entity_role` projection depends on the model-specific token alignment derived from `model.target_model_name`. The behaviour taxonomy, numeric correctness, and step segmentation stay the same. PE joins are only used when `task.output_schema=published_export`.
 
-### Recreate `llama_v3.csv`
-
-Use the same postprocess task with `task.output_schema=published_export` when you want the simplified published schema rather than the richer generic `full_results` table.
-
-This schema reconstructs:
-
-- the simplified `llama_v3.csv` schema
-- `pe` from PE values in `PE/pe_output`
-- `target_pos_resolved` from the PE source metadata
-- spaCy-rule `entity_role` labels projected onto the saved patch tokens
-- the published `generation_type` taxonomy and sidecar codebooks
-
-Required inputs:
-
-- `task.sweep_root` — patch sweep root with `sample_<idx>/layer_<L>_pos_<T>.json`
-- `task.pe_root` — PE root with `sample_<idx>/source_<pos>.json`
-- `task.eval_json` — original CoT eval JSON used to anchor question text and source reasoning for exact token/entity alignment
-
-Example using the research directory layout:
-
-```bash
-uv run --python 3.13 ri task=full_results \
-    task.sweep_root="/abs/path/patch/patch_pos_sweep" \
-    task.pe_root="/abs/path/PE/pe_output" \
-    task.eval_json="/abs/path/eval/single_batch_output_cot.json" \
-    task.output_schema=published_export \
-    task.output_file=outputs/llama_v3.csv
-```
-
-By default, `task.output_schema=published_export` publishes the pre-edit `llama_v3.csv` behaviour labels with `task.generation_other_label=other`.
-To reproduce the later edited variant (`llama_v3_edited.csv`), rerun with:
-
-```bash
-uv run --python 3.13 ri task=full_results \
-    task.sweep_root="/abs/path/patch/patch_pos_sweep" \
-    task.pe_root="/abs/path/PE/pe_output" \
-    task.eval_json="/abs/path/eval/single_batch_output_cot.json" \
-    task.output_schema=published_export \
-    task.output_file=outputs/llama_v3_edited.csv \
-    task.generation_other_label=noise
-```
-
-The published-export schema writes the same reproducibility sidecars as the full-results schema:
-
-- `*_source_tokens.csv`
-- `*_entity_codes.json`
-- `*_behavior_codes.json`
-
 ### Patch position sweep
 
 Sweeps over source positions, target positions, and layers for one sample. For each combination, patches a single source CoT hidden state (with `task.patch_from_generation=true`) into the target model and saves the generated output.
@@ -297,7 +249,7 @@ uv run ri task=cma \
 
 ### Grid sweeps (`--multirun`)
 
-Hydra's native `--multirun` (`-m`) replaces the old `ri-patch-grid` subprocess launcher. Sweep over any combination of fields with comma-separated values:
+Hydra's native `--multirun` (`-m`) sweeps over any combination of fields with comma-separated values:
 
 ```bash
 uv run ri -m task=patch \

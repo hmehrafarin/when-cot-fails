@@ -16,7 +16,7 @@ Run commands via `uv run` (e.g. `uv run ri ...`), or activate the environment wi
 
 Requires Python 3.10+, PyTorch, and Transformers.
 
-For the postprocessing tasks (`full_results`, `llama_export`), install the optional analysis extra and the spaCy English model once:
+For postprocessing, install the optional analysis extra and the spaCy English model once:
 
 ```bash
 uv sync --extra analysis
@@ -38,7 +38,7 @@ All experiments are driven through [Hydra](https://hydra.cc/) configs composed f
 ```
 ri/conf/
 ├── config.yaml          # root — picks one task / model / dataset / tracking
-├── task/                # evaluate, patch, cma, pe_analysis, patch_position_sweep, full_results, llama_export
+├── task/                # evaluate, patch, cma, pe_analysis, patch_position_sweep, full_results
 ├── model/               # llama_8b, qwen_7b
 ├── dataset/             # gsm8k
 └── tracking/            # disabled, wandb
@@ -102,7 +102,7 @@ There are two experiment tasks for full reproducibility, plus single-run tasks (
 
 Both `patch_position_sweep` and `pe_analysis` operate on a single sample (`task.sample_idx`) and sweep across all layers and all target positions. For running patching across many configurations at once, use Hydra's `--multirun` (see *Grid sweeps* below).
 
-### Step 3: Build reproducible full-results tables
+### Step 3: Postprocess patch sweeps
 
 After generating patch-position sweeps, build the derived analysis table that adds:
 
@@ -112,13 +112,20 @@ After generating patch-position sweeps, build the derived analysis table that ad
 - sidecar codebooks so the label taxonomy is published with the results
 
 The integrated labeler uses the same published taxonomy as the research scripts. Because patch-sweep JSON files already contain the canonical source token sequence, the repo projects those labels directly onto the saved patch tokens instead of requiring separate Qwen/Llama wrapper scripts during reproduction.
-The generation taxonomy follows the downstream analysis artifacts as well: `full_cot`, `semi_cot`, `partial_cot`, `final_only`, `text_only`, `none`, and `noise` by default.
+The generation taxonomy follows the downstream analysis artifacts as well. The postprocess task defaults to `noise` for the richer `full_results` schema and to `other` for the simplified `published_export` schema, unless you override `task.generation_other_label`.
+
+`task=full_results` is the unified postprocess task. Use:
+
+- `task.output_schema=full_results` for the richer analysis table
+- `task.output_schema=published_export` for the simplified published CSV shape backed by IE outputs
 
 For a single-sample sweep written to a flat directory:
 
 ```bash
 uv run ri task=full_results \
     task.sweep_root=patch_pos_sweep_results \
+    task.alignment_model=qwen \
+    task.output_schema=full_results \
     task.sample_idx=0 \
     task.output_file=outputs/full_results_sample0.csv
 ```
@@ -144,6 +151,8 @@ uv run ri task=patch_position_sweep \
 # Then aggregate them into a single reproducible table
 uv run ri task=full_results \
     task.sweep_root=patch_pos_sweep_results \
+    task.alignment_model=qwen \
+    task.output_schema=full_results \
     task.output_file=outputs/full_results.csv
 ```
 
@@ -156,17 +165,23 @@ uv run ri task=full_results \
 
 Useful overrides:
 
+- `task.output_schema=full_results|published_export` — selects the output schema
 - `task.tokenizer_name` — tokenizer used for the token-length columns; defaults to `${model.target_model_name}`
+- `task.alignment_model=llama|qwen` — required; selects the token-alignment path used for entity-role projection
+- `task.ie_root` — required when `task.output_schema=published_export`; IE root with `sample_<idx>/source_<pos>.json`
+- `task.eval_json` — optional, but recommended for exact published-export alignment; original CoT eval JSON
 - `task.spacy_model` — spaCy pipeline used for NER spans; defaults to `en_core_web_sm`
-- `task.generation_other_label=noise|other` — choose whether residual malformed generations are published as `noise` or `other` (default: `noise`, matching the section 2 tables)
+- `task.generation_other_label=noise|other` — override the schema-specific default for residual malformed generations
 - `task.source_tokens_file`, `task.entity_codes_file`, `task.behavior_codes_file` — override sidecar output paths
 - `task.progress_every=0` — disable progress logging
 
+Only `entity_role` projection depends on `task.alignment_model`. The behaviour taxonomy, numeric correctness, and step segmentation stay the same. IE joins are only used when `task.output_schema=published_export`.
+
 ### Recreate `llama_v3.csv`
 
-Use `task=llama_export` when you want the publishable Llama-specific export shape rather than the richer generic `full_results` table.
+Use the same postprocess task with `task.output_schema=published_export` when you want the simplified published schema rather than the richer generic `full_results` table.
 
-This task reconstructs:
+This schema reconstructs:
 
 - the simplified `llama_v3.csv` schema
 - `pe` from IE `indirect_effect` values in `IE/ie_output`
@@ -178,31 +193,35 @@ Required inputs:
 
 - `task.sweep_root` — patch sweep root with `sample_<idx>/layer_<L>_pos_<T>.json`
 - `task.ie_root` — IE root with `sample_<idx>/source_<pos>.json`
-- `task.eval_json` — original CoT eval JSON used to anchor question text and source reasoning for exact Llama token/entity alignment
+- `task.eval_json` — original CoT eval JSON used to anchor question text and source reasoning for exact token/entity alignment
 
 Example using the research directory layout:
 
 ```bash
-uv run --python 3.13 ri task=llama_export \
+uv run --python 3.13 ri task=full_results \
     task.sweep_root="/abs/path/patch/patch_pos_sweep" \
     task.ie_root="/abs/path/IE/ie_output" \
     task.eval_json="/abs/path/eval/single_batch_output_cot.json" \
+    task.alignment_model=llama \
+    task.output_schema=published_export \
     task.output_file=outputs/llama_v3.csv
 ```
 
-By default, `task=llama_export` publishes the pre-edit `llama_v3.csv` behaviour labels with `task.generation_other_label=other`.
+By default, `task.output_schema=published_export` publishes the pre-edit `llama_v3.csv` behaviour labels with `task.generation_other_label=other`.
 To reproduce the later edited variant (`llama_v3_edited.csv`), rerun with:
 
 ```bash
-uv run --python 3.13 ri task=llama_export \
+uv run --python 3.13 ri task=full_results \
     task.sweep_root="/abs/path/patch/patch_pos_sweep" \
     task.ie_root="/abs/path/IE/ie_output" \
     task.eval_json="/abs/path/eval/single_batch_output_cot.json" \
+    task.alignment_model=llama \
+    task.output_schema=published_export \
     task.output_file=outputs/llama_v3_edited.csv \
     task.generation_other_label=noise
 ```
 
-`task=llama_export` writes the same reproducibility sidecars as `task=full_results`:
+The published-export schema writes the same reproducibility sidecars as the full-results schema:
 
 - `*_source_tokens.csv`
 - `*_entity_codes.json`

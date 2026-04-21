@@ -224,15 +224,26 @@ def extract_answer_from_generation(
     batch_text: list[str],
     tokenizer: Any | None = None,
     template_name: str | None = None,
+    extraction_mode: str = "flexible",
 ) -> dict[str, list[str | None]]:
     """
     Extracts the answer from model generation output.
+
+    Parameters
+    ----------
+    extraction_mode :
+        ``"flexible"`` (default) — fall back to the last numeric token in the
+        generation when no ``#### N`` or ``Final Answer:`` label is present.
+        ``"strict"`` — only accept answers that appear under one of those
+        explicit labels; otherwise return ``None`` for ``answer_num``.
 
     Returns
     -------
     dict
         ``{"answer_text": [...], "answer_num": [...]}``
     """
+    if extraction_mode not in ("flexible", "strict"):
+        raise ValueError(f"extraction_mode must be 'flexible' or 'strict', got {extraction_mode!r}")
     answers: dict[str, list[str | None]] = {"answer_text": [], "answer_num": []}
     end_header = get_end_header_token(tokenizer) if tokenizer else None
     if not end_header:
@@ -265,7 +276,7 @@ def extract_answer_from_generation(
         matched_number = extract_final_answer(text)
         if not matched_number:
             matched_number = _extract_number_after_final_answer_label(text)
-        if not matched_number:
+        if not matched_number and extraction_mode == "flexible":
             use_plain_numeric = False
             if template_name and "non_cot" in template_name.lower():
                 use_plain_numeric = True

@@ -17,7 +17,7 @@ dependencies = [
   "datasets",
   "pandas",
   "numpy",
-  "torch",
+  "torch>=2.2,<2.6",
   "hf-transfer",
   "tqdm",
   "pydantic>=2.13.2",
@@ -28,6 +28,14 @@ dependencies = [
 
 [project.scripts]
 ri = "ri.main:main"
+
+[[tool.uv.index]]
+name = "pytorch-cu121"
+url = "https://download.pytorch.org/whl/cu121"
+explicit = true
+
+[tool.uv.sources]
+torch = { index = "pytorch-cu121" }
 
 [tool.setuptools]
 include-package-data = true

@@ -327,13 +327,16 @@ class PatchEffectAnalyzer(CausalMediationRunner):
                 f"requested={self.target_positions}, valid_count={len(valid_target_positions)}"
             )
 
-        # Get source CoT
-        source_cot = source_sample.get(
-            "Generated Answer_cot", source_sample.get("Generated Answer_CoT", "")
-        )
-        if isinstance(source_cot, list):
-            source_cot = source_cot[0] if source_cot else ""
-        source_cot = str(source_cot or "").strip()
+        # Decode source CoT from the generation we just ran, falling back to a
+        # pre-generated field on the source sample if present (legacy JSON format).
+        source_cot = source_tokenizer.decode(generated_ids[0], skip_special_tokens=True).strip()
+        if not source_cot:
+            legacy = source_sample.get(
+                "Generated Answer_cot", source_sample.get("Generated Answer_CoT", "")
+            )
+            if isinstance(legacy, list):
+                legacy = legacy[0] if legacy else ""
+            source_cot = str(legacy or "").strip()
 
         # Get target baseline generation and answer
         target_pad_id = get_pad_id(target_tokenizer)

@@ -4,8 +4,6 @@ outputs/
 *.egg-info/
 job_outputs/
 .DS_Store
-k8s/
-plot/
 wandb/
 patch_pos_sweep_results/
 plot_utils/
@@ -15,3 +13,4 @@ patch_pos_sweep*/
 patch_layer*
 .venv/
 .venv-enrich-qwen/
+.claude/

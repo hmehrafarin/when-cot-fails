@@ -1,6 +1,6 @@
-# when-cot-fails
+# When Chain-of-Thought Fails, the Solution Hides in the Hidden States
 
-Toolkit for hidden-state patching experiments on reasoning models. Patches activations from a source model (with CoT) into a target model (without CoT) to measure how reasoning representations transfer across layers and token positions.
+Toolkit for hidden-state patching experiments on reasoning models. Patches activations from a source model (with CoT) into a target model (without CoT) to measure weather task-relevant information is available within the hidden states.
 
 ## Setup
 

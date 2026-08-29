@@ -278,3 +278,7 @@ uv run ri -m task=patch \
 - `ri/prompts/` — prompt templates and construction
 - `ri/evaluation/` — generation and evaluation runner
 - `ri/utils/` — tokenizer helpers, answer extraction
+
+## Citation
+
+Coming Soon!

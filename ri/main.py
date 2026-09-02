@@ -132,6 +132,7 @@ def _dispatch(cfg: DictConfig, task: str, tracker: ExperimentTracker) -> None:
             start_src_pos=cfg.task.start_src_pos,
             seed=cfg.seed,
             max_gen_len=cfg.task.max_gen_len,
+            patch_from_generation=cfg.task.patch_from_generation,
             cache_logits=cfg.task.cache_logits,
             logit_cache_dir=cfg.task.logit_cache_dir,
             target_positions=target_positions_arg,
@@ -158,6 +159,7 @@ def _dispatch(cfg: DictConfig, task: str, tracker: ExperimentTracker) -> None:
             src_prompt_template=cfg.dataset.src_prompt_template,
             tgt_prompt_template=cfg.dataset.tgt_prompt_template,
             resume=cfg.task.resume,
+            seed=cfg.seed,
         )
 
     elif task == "full_results":

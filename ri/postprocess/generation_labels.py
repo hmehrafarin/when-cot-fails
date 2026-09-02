@@ -15,7 +15,9 @@ NUM_RE = re.compile(r"-?\d[\d,]*(?:\.\d+)?")
 WORD_RE = re.compile(r"[A-Za-z]+")
 STEP_MARKER_RE = re.compile(r"(?im)^\s*(?:step\s*\d+|\d+\.)")
 ANSWER_PREFIX_RE = re.compile(r"(?is)^\s*(?:final\s+answer|answer)\s*[:\-]?\s*")
-ANSWER_PHRASE_RE = re.compile(r"(?i)\b(final\s+answer|answer\s+is|correct\s+answer|final\s+result)\b")
+ANSWER_PHRASE_RE = re.compile(
+    r"(?i)\b(final\s+answer|answer\s+is|correct\s+answer|final\s+result)\b"
+)
 REPEATED_SYMBOL_RE = re.compile(r"([\"'`.\-_])\1{9,}")
 LEADING_PUNCT = set(":;,.()[]{}$")
 NUMERIC_TOKEN_RE = re.compile(r"^[+-]?\d+(?:\.\d+)?$")
@@ -34,7 +36,9 @@ def generation_type_codes(other_label: str = "noise") -> dict[str, str]:
         "final_only": "A short final-answer style response without a clear reasoning trace.",
         "text_only": "Natural-language text with no numeric answer content.",
         "none": "No usable generation text was produced.",
-        other_label: "Residual malformed output." if other_label == "other" else "Residual malformed output relabeled as noise.",
+        other_label: "Residual malformed output."
+        if other_label == "other"
+        else "Residual malformed output relabeled as noise.",
     }
 
 
@@ -119,7 +123,11 @@ def _normalize_generated_text(text: str) -> str:
 
 def _relabel_other(text: str, other_label: str) -> str:
     normalized = _normalize_generated_text(text)
-    if normalized and not WORD_CHAR_RE.search(normalized) and NUMERIC_TOKEN_RE.fullmatch(normalized):
+    if (
+        normalized
+        and not WORD_CHAR_RE.search(normalized)
+        and NUMERIC_TOKEN_RE.fullmatch(normalized)
+    ):
         return "final_only"
     return other_label
 
@@ -163,7 +171,14 @@ def classify_generation_type(text: object, other_label: str = "noise") -> str:
             label = "semi_cot"
 
     num_count = len(NUM_RE.findall(stripped))
-    if label == other_label and has_alpha and num_count == 1 and word_count < 10 and eq_like == 0 and not has_ops:
+    if (
+        label == other_label
+        and has_alpha
+        and num_count == 1
+        and word_count < 10
+        and eq_like == 0
+        and not has_ops
+    ):
         label = "final_only"
 
     if label == other_label and has_number and has_alpha:

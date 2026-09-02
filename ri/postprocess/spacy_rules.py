@@ -258,7 +258,9 @@ def _raw_span(
     return orig_start, last_start + last_width
 
 
-def _get_orig_token_text(token, orig_text: str | None, char_map: Sequence[tuple[int, int]] | None) -> str:
+def _get_orig_token_text(
+    token, orig_text: str | None, char_map: Sequence[tuple[int, int]] | None
+) -> str:
     if orig_text is None or char_map is None:
         return token.text
     start, end = _raw_span(token.idx, token.idx + len(token.text), char_map)
@@ -329,7 +331,7 @@ def _base_num_unit_pass(doc: Doc, set_tag) -> None:
             end = token.i + 1
             while end < len(doc) and doc[end].pos_ in ("ADJ", "NOUN", "PROPN", "NUM"):
                 end += 1
-            for related in doc[token.i:end]:
+            for related in doc[token.i : end]:
                 set_tag(related.i, "UNIT")
 
 
@@ -487,7 +489,9 @@ def build_question_context(question: str, nlp: Language | None = None) -> Questi
     return tag_doc(question=question, nlp=nlp).context
 
 
-def tag_reasoning(reasoning: str, context: QuestionContext, nlp: Language | None = None) -> TagResult:
+def tag_reasoning(
+    reasoning: str, context: QuestionContext, nlp: Language | None = None
+) -> TagResult:
     norm_text, orig_text, char_map = _prepare_text(reasoning)
     doc = (nlp or get_nlp())(norm_text)
     tags = {token.i: "OTHER" for token in doc}

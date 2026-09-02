@@ -357,19 +357,25 @@ def _load_nlp(model_name: str):
 def _write_codebook(file_path: Path, *, codebook_name: str, codes: dict[str, str]) -> None:
     payload = {
         "name": codebook_name,
-        "codes": [{"code": code, "description": description} for code, description in codes.items()],
+        "codes": [
+            {"code": code, "description": description} for code, description in codes.items()
+        ],
     }
     file_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
 
 
 def _discover_sample_sources(sweep_root: Path, sample_idx: int) -> list[tuple[int, Path]]:
     sample_dirs = [
-        path for path in sweep_root.iterdir() if path.is_dir() and _parse_sample_idx(path.name) is not None
+        path
+        for path in sweep_root.iterdir()
+        if path.is_dir() and _parse_sample_idx(path.name) is not None
     ]
     if sample_dirs:
         return [
             (_parse_sample_idx(path.name), path)
-            for path in sorted(sample_dirs, key=lambda path: (_parse_sample_idx(path.name), path.name))
+            for path in sorted(
+                sample_dirs, key=lambda path: (_parse_sample_idx(path.name), path.name)
+            )
         ]
 
     flat_sweep_files = _sort_sweep_files(sweep_root)
@@ -468,8 +474,12 @@ def _load_full_results_sample(
                 and gold_num is not None
                 and math.isclose(pred_num, gold_num, rel_tol=0.0, abs_tol=1e-9)
             )
-            abs_error = abs(pred_num - gold_num) if (is_numeric and gold_num is not None) else float("nan")
-            signed_error = pred_num - gold_num if (is_numeric and gold_num is not None) else float("nan")
+            abs_error = (
+                abs(pred_num - gold_num) if (is_numeric and gold_num is not None) else float("nan")
+            )
+            signed_error = (
+                pred_num - gold_num if (is_numeric and gold_num is not None) else float("nan")
+            )
             step_id, step_label = _step_for_source_pos(step_meta, sorted_step_positions, source_pos)
 
             output_rows.append(
@@ -495,7 +505,8 @@ def _load_full_results_sample(
                     "generated_token_length": generated_len,
                     "average_generated_token_length": avg_generated_length,
                     "source_generated_token_length": source_generated_token_length,
-                    "generated_token_length_delta_vs_source": generated_len - source_generated_token_length,
+                    "generated_token_length_delta_vs_source": generated_len
+                    - source_generated_token_length,
                     "average_generated_token_length_delta_vs_source": avg_generated_length
                     - source_generated_token_length,
                     "entity_role": entity_role_map.get(source_pos, "OTHER"),
@@ -531,7 +542,9 @@ def _load_published_export_sample(
     canonical_payload = json.loads(canonical_file.read_text(encoding="utf-8"))
     token_map = _build_source_token_map_from_payload(canonical_payload)
     source_generated_answer = str(canonical_payload.get("source_generated_answer", ""))
-    question = _extract_question_from_eval_item(eval_item) or _extract_question_from_payload(canonical_payload)
+    question = _extract_question_from_eval_item(eval_item) or _extract_question_from_payload(
+        canonical_payload
+    )
     canonical_reasoning = _extract_reasoning_from_eval_item(eval_item) or source_generated_answer
     requested_targets = {
         int(SWEEP_FILE_RE.match(path.name).group(2))
@@ -595,9 +608,15 @@ def _load_published_export_sample(
                 and gold_num is not None
                 and math.isclose(pred_num, gold_num, rel_tol=0.0, abs_tol=1e-9)
             )
-            abs_error = abs(pred_num - gold_num) if (is_numeric and gold_num is not None) else float("nan")
-            signed_error = pred_num - gold_num if (is_numeric and gold_num is not None) else float("nan")
-            req_to_resolved, resolved_positions = pe_metadata.source_target_meta.get(source_pos, ({}, []))
+            abs_error = (
+                abs(pred_num - gold_num) if (is_numeric and gold_num is not None) else float("nan")
+            )
+            signed_error = (
+                pred_num - gold_num if (is_numeric and gold_num is not None) else float("nan")
+            )
+            req_to_resolved, resolved_positions = pe_metadata.source_target_meta.get(
+                source_pos, ({}, [])
+            )
             target_pos_resolved = _resolve_target_position(
                 target_pos_requested,
                 req_to_resolved,
@@ -641,7 +660,9 @@ def _load_published_export_sample(
             generated_len = int(row["generated_token_length"])
             avg_generated_length = group_averages[row["target_pos_resolved"]]
             row["average_generated_token_length"] = avg_generated_length
-            row["generated_token_length_delta_vs_source"] = generated_len - source_generated_token_length
+            row["generated_token_length_delta_vs_source"] = (
+                generated_len - source_generated_token_length
+            )
             row["average_generated_token_length_delta_vs_source"] = (
                 avg_generated_length - source_generated_token_length
             )
@@ -658,7 +679,9 @@ def _parse_sample_idx(name: str) -> int | None:
 
 
 def _sort_sweep_files(sample_dir: Path) -> list[Path]:
-    files = [path for path in sample_dir.glob("layer_*_pos_*.json") if SWEEP_FILE_RE.match(path.name)]
+    files = [
+        path for path in sample_dir.glob("layer_*_pos_*.json") if SWEEP_FILE_RE.match(path.name)
+    ]
     return sorted(
         files,
         key=lambda path: (
@@ -669,8 +692,14 @@ def _sort_sweep_files(sample_dir: Path) -> list[Path]:
 
 
 def _sort_source_pe_files(pe_dir: Path) -> list[Path]:
-    files = [path for path in pe_dir.glob("source_*.json") if re.search(r"source_(\d+)\.json$", path.name)]
-    return sorted(files, key=lambda path: int(re.search(r"source_(\d+)\.json$", path.name).group(1)))
+    files = [
+        path
+        for path in pe_dir.glob("source_*.json")
+        if re.search(r"source_(\d+)\.json$", path.name)
+    ]
+    return sorted(
+        files, key=lambda path: int(re.search(r"source_(\d+)\.json$", path.name).group(1))
+    )
 
 
 def _choose_canonical_sweep_file(files: list[Path]) -> Path | None:
@@ -733,7 +762,9 @@ def _load_pe_sample_metadata(pe_dir: Path, requested_targets: set[int]) -> PESam
             cot_text_hint = str(payload.get("source_generated_answer_cot") or "")
 
         req_raw = payload.get("target_positions_requested")
-        resolved_positions = [int(value) for value in (payload.get("target_positions_resolved") or [])]
+        resolved_positions = [
+            int(value) for value in (payload.get("target_positions_resolved") or [])
+        ]
         req_to_resolved: dict[int, int] = {}
         if isinstance(req_raw, list) and len(req_raw) == len(resolved_positions):
             for requested, resolved in zip(req_raw, resolved_positions, strict=True):
@@ -753,9 +784,12 @@ def _load_pe_sample_metadata(pe_dir: Path, requested_targets: set[int]) -> PESam
                 target_pos = int(item["target_position"])
                 if target_pos not in needed_resolved_targets:
                     continue
-                pe_map[(layer_patch, target_pos, source_pos)] = _maybe_float(
-                    item.get("pe", item.get("indirect_effect"))
-                )
+                # `patch_effect` is what ri/patching/pe_analysis.py writes; the older
+                # `pe` / `indirect_effect` spellings are kept for pre-existing PE outputs.
+                pe_value = item.get("patch_effect")
+                if pe_value is None:
+                    pe_value = item.get("pe", item.get("indirect_effect"))
+                pe_map[(layer_patch, target_pos, source_pos)] = _maybe_float(pe_value)
 
     return PESampleMetadata(
         patched_map=patched_map,
@@ -868,7 +902,9 @@ def _classify_lines_setup_step_final(text: str) -> list[str]:
     return labels
 
 
-def _map_source_labels_to_target_line_count(source_labels: list[str], target_count: int) -> list[str]:
+def _map_source_labels_to_target_line_count(
+    source_labels: list[str], target_count: int
+) -> list[str]:
     if target_count <= 0:
         return []
     if not source_labels:
@@ -930,7 +966,9 @@ def _enforce_final_answer_last(
         id_map[f"Step {step_number}"] = next_id
         next_id += 1
 
-    for label in sorted({label for label in assigned.values() if label not in id_map and label != "Final Answer"}):
+    for label in sorted(
+        {label for label in assigned.values() if label not in id_map and label != "Final Answer"}
+    ):
         id_map[label] = next_id
         next_id += 1
 
@@ -1166,7 +1204,9 @@ def _build_llama_entity_role_map(
     elif canonical_tokens == [*json_tokens, "<|eot_id|>"]:
         labels = [*_assign_labels_from_offsets(json_offsets, spans), "OTHER"]
     else:
-        reconstructed_text, canonical_offsets = _reconstruct_text_and_offsets(canonical_tokens, tokenizer)
+        reconstructed_text, canonical_offsets = _reconstruct_text_and_offsets(
+            canonical_tokens, tokenizer
+        )
         _doc, _unused, reconstructed_spans = label_reasoning_with_question(
             question=question,
             reasoning=reconstructed_text,

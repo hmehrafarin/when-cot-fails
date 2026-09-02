@@ -100,11 +100,12 @@ def run(
     src_prompt_template: str = "gsm8k_cot",
     tgt_prompt_template: str = "gsm8k_non_cot",
     resume: bool = False,
+    seed: int = 42,
 ) -> None:
     if target_positions is not None and target_pos is not None:
-        raise ValueError("Provide either --target_pos or --target_positions, not both.")
+        raise ValueError("Provide either task.target_pos or task.target_positions, not both.")
     if layer is None and layer_stride <= 0:
-        raise ValueError("--layer_stride must be > 0 when sweeping layers.")
+        raise ValueError("task.layer_stride must be > 0 when sweeping layers.")
 
     output_path = pathlib.Path(output_dir)
     output_path.mkdir(parents=True, exist_ok=True)
@@ -129,7 +130,7 @@ def run(
         tgt_prompt_template=tgt_prompt_template,
         patch_from_generation=patch_from_generation,
         patch_config=patch_config,
-        seed=42,
+        seed=seed,
         batch_size=1,
     )
 

@@ -79,7 +79,7 @@ class PatchRunner:
         self.tgt_prompter = Prompter(template_name=tgt_prompt_template)
 
     def _run_single_batch(self, batch_idx: int) -> dict[str, list]:
-        #!TODO: refactor to drop the token importance, we will remove it in the next update
+        # NOTE: token-importance selection is retained for backwards compatibility with earlier runs.
         _q, a, batched_input_source = prepare_batch_data(
             self.source_data,
             batch_idx,

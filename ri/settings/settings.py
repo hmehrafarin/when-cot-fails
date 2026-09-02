@@ -15,9 +15,6 @@ HUGGINGFACE_CACHE_DIR: str = (
 # Alias for model cache (same as HuggingFace cache)
 MODEL_CACHE_DIR: str = HUGGINGFACE_CACHE_DIR
 
-MODEL_OUTPUT_DIR: str = os.getenv("RI_OUTPUT_DIR", "outputs")
-
-SCRATCH_DIR: str = os.getenv("SCRATCHDIR", "/tmp")
 PROJECT_DIR: str = os.getenv("PROJECTDIR", "/tmp")
 
 PATCH_LOGITS_CACHE_DIR: str = os.path.join(PROJECT_DIR, "patch_logits")
@@ -54,4 +51,3 @@ class Constants:
 
     HUGGINGFACE_CACHE_DIR = HUGGINGFACE_CACHE_DIR
     MODEL_CACHE_DIR = MODEL_CACHE_DIR
-    MODEL_OUTPUT_DIR = MODEL_OUTPUT_DIR

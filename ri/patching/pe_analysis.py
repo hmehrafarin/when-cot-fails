@@ -73,7 +73,7 @@ def _parse_target_positions_arg(
     if not raw or raw.lower() == "none":
         return None
 
-    # Fire may parse `--target_positions=0,-1` as `(0, -1)`; accept either.
+    # Hydra may deliver `task.target_positions=0,-1` as a list; accept either.
     if (
         (raw.startswith("(") and raw.endswith(")")) or (raw.startswith("[") and raw.endswith("]"))
     ) and len(raw) >= 2:
@@ -593,6 +593,7 @@ def run_pe_analysis(
     start_src_pos: int | None = 0,
     seed: int = 42,
     max_gen_len: int = 400,
+    patch_from_generation: bool = True,
     cache_logits: bool = True,
     logit_cache_dir: str | None = None,
     target_positions: str | None = None,
@@ -621,10 +622,13 @@ def run_pe_analysis(
         Random seed.
     max_gen_len : int
         Maximum generation length.
+    patch_from_generation : bool
+        If True, take source hidden states from the source model's generation
+        rather than from its prompt.
     cache_logits : bool
         Whether to cache logits to disk for reuse across runs.
     logit_cache_dir : str | None
-        Directory for logit cache. Defaults to $SCRATCHDIR/patch_logits.
+        Directory for logit cache. Defaults to $PROJECTDIR/patch_logits.
     target_positions : str | None
         Comma-separated target token position indices resolved over valid
         (non-pad) target tokens. Example: "0,-1". None means full PE over all
@@ -640,6 +644,7 @@ def run_pe_analysis(
         target_dataset=target_dataset,
         seed=seed,
         max_gen_len=max_gen_len,
+        patch_from_generation=patch_from_generation,
         start_src_pos=start_src_pos,
         cache_logits=cache_logits,
         logit_cache_dir=logit_cache_dir,

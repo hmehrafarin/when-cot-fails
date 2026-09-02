@@ -8,7 +8,7 @@ version = "0.2.0"
 description = "Toolkit for prompt construction and patching for reasoning models"
 readme = "README.md"
 requires-python = ">=3.10"
-authors = [{ name = "h mehrafarin" }]
+authors = [{ name = "Houman Mehrafarin" }]
 license = { text = "MIT" }
 dependencies = [
   "transformers>=4.41",

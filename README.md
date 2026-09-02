@@ -332,6 +332,10 @@ runner. Follow `ri/patching/config.py` if you want Pydantic validation of the ta
 - `ri/tracking.py` — optional Weights & Biases tracker
 - `ri/utils/` — tokenizer helpers, answer extraction, text utilities
 
+## License
+
+Released under the MIT License. See [LICENSE](LICENSE).
+
 ## Citation
 
 Coming Soon!

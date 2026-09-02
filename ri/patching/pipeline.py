@@ -212,7 +212,7 @@ def get_source_hidden_states(
             if not hidden_steps:
                 raise RuntimeError(
                     "Model did not return hidden states during generation; "
-                    "please disable --patch_from_generation or ensure the model supports hidden states."
+                    "please set task.patch_from_generation=false or ensure the model supports hidden states."
                 )
             # Collect last token hidden state from each generation step
             per_step_hs: list[torch.Tensor] = []  # each: (batch, hidden_dim)

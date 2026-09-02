@@ -7,7 +7,7 @@ from ri.utils.tokenizer import build_role_header
 USER_MARKER = "<|eot_id|><|start_header_id|>user<|end_header_id|>"
 ASSISTANT_MARKER = "<|eot_id|><|start_header_id|>assistant<|end_header_id|>"
 
-#!TODO: refactor to drop the token importance, we will remove it in the next update
+# NOTE: token-importance selection is retained for backwards compatibility with earlier runs.
 
 
 def _normalize_qa_item(

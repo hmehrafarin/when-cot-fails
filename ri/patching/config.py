@@ -4,10 +4,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field, field_validator
 
-from ri.settings.settings import Constants
-
 ExtractionMode = Literal["flexible", "strict"]
-MODEL_DIR = Constants.MODEL_OUTPUT_DIR
 
 
 class PatchConfig(BaseModel):

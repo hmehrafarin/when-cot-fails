@@ -784,9 +784,12 @@ def _load_pe_sample_metadata(pe_dir: Path, requested_targets: set[int]) -> PESam
                 target_pos = int(item["target_position"])
                 if target_pos not in needed_resolved_targets:
                     continue
-                pe_map[(layer_patch, target_pos, source_pos)] = _maybe_float(
-                    item.get("pe", item.get("indirect_effect"))
-                )
+                # `patch_effect` is what ri/patching/pe_analysis.py writes; the older
+                # `pe` / `indirect_effect` spellings are kept for pre-existing PE outputs.
+                pe_value = item.get("patch_effect")
+                if pe_value is None:
+                    pe_value = item.get("pe", item.get("indirect_effect"))
+                pe_map[(layer_patch, target_pos, source_pos)] = _maybe_float(pe_value)
 
     return PESampleMetadata(
         patched_map=patched_map,

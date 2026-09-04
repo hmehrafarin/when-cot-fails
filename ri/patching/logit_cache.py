@@ -88,7 +88,7 @@ class LogitCache:
     def load_logits(
         self,
         src_pos: int,
-        device: torch.device,
+        device: torch.device | str,
     ) -> torch.Tensor | None:
         """
         Load cached logits for a source position.

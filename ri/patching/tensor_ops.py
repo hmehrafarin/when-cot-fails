@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
-from typing import Any
 
 
 def left_pad_offsets(tokenized_batch) -> list[int]:
@@ -31,68 +30,6 @@ def mask_to_positions(mask_row) -> list[int]:
         except Exception:
             continue
     return positions
-
-
-def add_offsets_to_positions(ti_batch: list[list[dict[str, Any]]], offsets: list[int]) -> None:
-    for i, imp_tokens in enumerate(ti_batch):
-        off = offsets[i] if i < len(offsets) else 0
-        for item in imp_tokens:
-            item["pos"] = int(item.get("pos", 0)) + off
-
-
-def build_word_span_map(
-    imp_tokens: list[dict[str, Any]],
-    input_ids_row,
-    attention_mask_row,
-    tokenizer,
-) -> dict[int, dict[str, Any]]:
-    """Map the starting token index of each importance entry to its token span."""
-    if not imp_tokens:
-        return {}
-
-    ids_list = input_ids_row.tolist() if hasattr(input_ids_row, "tolist") else list(input_ids_row)
-    mask_list = (
-        attention_mask_row.tolist()
-        if hasattr(attention_mask_row, "tolist")
-        else list(attention_mask_row)
-    )
-
-    seq_len = len(ids_list)
-    valid_len = sum(int(v) for v in mask_list)
-    valid_start = seq_len - valid_len
-    valid_end = seq_len
-
-    ordered = sorted(imp_tokens, key=lambda item: int(item.get("pos", 0)))
-    spans: dict[int, dict[str, Any]] = {}
-
-    for idx, item in enumerate(ordered):
-        start = int(item.get("pos", 0))
-        if start < valid_start or start >= valid_end:
-            continue
-
-        next_start = valid_end
-        for follow in ordered[idx + 1 :]:
-            candidate = int(follow.get("pos", next_start))
-            if candidate > start:
-                next_start = candidate
-                break
-
-        end = min(next_start, valid_end)
-        if end <= start:
-            end = min(valid_end, start + 1)
-
-        segment_ids = ids_list[start:end]
-        if not segment_ids:
-            continue
-
-        decoded = tokenizer.decode(segment_ids, clean_up_tokenization_spaces=False)
-        spans[start] = {
-            "start": start,
-            "end": end,
-            "ids": segment_ids,
-            "text": decoded,
-        }
-    return spans
 
 
 def _find_subsequence(haystack: Sequence[int], needle: Sequence[int]) -> int:

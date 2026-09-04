@@ -4,23 +4,6 @@ from typing import Any
 import torch
 
 
-def strip_llama_default_metadata(tokenizer: Any) -> None:
-    """
-    Drop the banner that injects the Llama knowledge/date metadata.
-    """
-    template = getattr(tokenizer, "chat_template", None)
-    if not template:
-        return
-
-    markers = ("Cutting Knowledge Date:", "Today Date:")
-    if not any(marker in template for marker in markers):
-        return
-
-    lines = template.splitlines(keepends=True)
-    cleaned = [line for line in lines if not any(marker in line for marker in markers)]
-    tokenizer.chat_template = "".join(cleaned)
-
-
 def decode_tokens(tokenizer: Any, token_array: Any) -> Any:
     """Decode tokens, handling both 1D and 2D arrays."""
     if hasattr(token_array, "shape") and len(token_array.shape) > 1:
@@ -101,27 +84,9 @@ def get_eot_token(tokenizer: Any) -> str | None:
     return find_special_token(tokenizer, ["eot"], default=None)
 
 
-def get_start_header_token(tokenizer: Any) -> str | None:
-    """Return the model's start header token string when available."""
-    return find_special_token(tokenizer, ["start", "header"], default=None)
-
-
 def get_end_header_token(tokenizer: Any) -> str | None:
     """Return the model's end header token string when available."""
     return find_special_token(tokenizer, ["end", "header"], default=None)
-
-
-def build_role_header(tokenizer: Any, role: str) -> str | None:
-    """
-    Construct the chat header marker for ``role`` using the tokenizer's
-    special tokens.
-    """
-    start = get_start_header_token(tokenizer)
-    end = get_end_header_token(tokenizer)
-    if not start or not end:
-        return None
-    prefix = get_eot_token(tokenizer) or ""
-    return f"{prefix}{start}{role}{end}"
 
 
 def get_eos_token_ids(tokenizer: Any) -> int | list[int]:
@@ -202,7 +167,6 @@ def make_inputs(
     system_prompt: bool = False,
     add_generation_prompt: bool = False,
     rendered_prompts: list[str] | None = None,
-    max_length: int | None = None,
 ) -> dict:
     """
     Prepare model inputs (``input_ids`` and ``attention_mask``) for a batch of prompts.
@@ -226,15 +190,13 @@ def make_inputs(
         tokenizer.encode(p, add_special_tokens=add_special_tokens) for p in rendered_prompts
     ]
     maxlen = max(len(toks) for toks in token_lists)
-    if max_length is not None:
-        maxlen = max(maxlen, max_length)
 
     pad_id = get_pad_id(tokenizer)
 
     input_ids = [[pad_id] * (maxlen - len(toks)) + toks for toks in token_lists]
     attention_mask = [[0] * (maxlen - len(toks)) + [1] * len(toks) for toks in token_lists]
 
-    tensor_kwargs = {}
+    tensor_kwargs: dict[str, Any] = {}
     if device:
         tensor_kwargs["device"] = device
 

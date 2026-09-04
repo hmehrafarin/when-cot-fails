@@ -8,7 +8,6 @@ from tqdm import tqdm
 
 from ri.patching.config import ExtractionMode, PatchConfig
 from ri.patching.runner import PatchRunner
-from ri.settings import DEFAULT_MODEL_NAME
 from ri.tracking import ExperimentTracker
 
 from . import pipeline as cma_pipeline
@@ -101,17 +100,12 @@ class CausalMediationRunner(PatchRunner):
             )
 
 
-class PatchPositionAnalyzer(CausalMediationRunner):
-    """Backward compatible alias."""
-
-
 def run_cma(
     *,
-    source_model_name: str | None = None,
+    source_model_name: str,
+    source_dataset: str,
+    target_dataset: str,
     target_model_name: str | None = None,
-    model_name: str = DEFAULT_MODEL_NAME,
-    source_dataset: str = "outputs/output_42_no_icl_deterministic.json",
-    target_dataset: str = "outputs/output_42_no_icl_deterministic.json",
     src_prompt_template: str = "gsm8k_cot",
     tgt_prompt_template: str = "gsm8k_non_cot",
     source_layer: int = 25,
@@ -121,17 +115,18 @@ def run_cma(
     include_all_tokens: bool = False,
     patch_from_generation: bool = False,
     max_gen_len: int = 400,
+    source_max_gen_len: int | None = None,
     patch_position: int | None = None,
     gen_cache_dir: str | None = None,
     extraction_mode: ExtractionMode = "flexible",
     output_file: str = "patch_position_analysis.json",
     tracker: ExperimentTracker | None = None,
 ) -> None:
-    resolved_source_model = source_model_name or model_name
-    resolved_target_model = target_model_name or resolved_source_model
+    resolved_target_model = target_model_name or source_model_name
 
     patch_config = PatchConfig(
         max_gen_len=max_gen_len,
+        source_max_gen_len=source_max_gen_len,
         source_layer=source_layer,
         target_layer=target_layer,
         patch_position=patch_position,
@@ -142,7 +137,7 @@ def run_cma(
     )
 
     runner = CausalMediationRunner(
-        source_model_name=resolved_source_model,
+        source_model_name=source_model_name,
         target_model_name=resolved_target_model,
         source_dataset=source_dataset,
         target_dataset=target_dataset,

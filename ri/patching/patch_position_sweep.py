@@ -4,47 +4,11 @@ import pathlib
 from tqdm import tqdm
 
 from ri.common import build_prompt_batch, prepare_batch_data
-from ri.patching.config import PatchConfig
+from ri.patching.config import ExtractionMode, PatchConfig
 from ri.patching.pipeline import get_source_hidden_states
 from ri.patching.runner import PatchRunner
 from ri.utils import make_inputs, render_prompts
 from ri.utils.text import prompt_text_from_rendered
-
-
-def _parse_target_positions_arg(raw_value: str | None) -> list[int] | None:
-    if raw_value is None:
-        return None
-
-    raw = str(raw_value).strip()
-    if not raw or raw.lower() == "none":
-        return None
-
-    # Allow Fire-style tuple/list strings like "(0, -1)" or "[0,-1]".
-    if (
-        (raw.startswith("(") and raw.endswith(")")) or (raw.startswith("[") and raw.endswith("]"))
-    ) and len(raw) >= 2:
-        raw = raw[1:-1].strip()
-    if not raw:
-        return None
-
-    parsed: list[int] = []
-    seen: set[int] = set()
-    for raw_token in raw.split(","):
-        token = raw_token.strip()
-        if not token:
-            continue
-        try:
-            value = int(token)
-        except ValueError as e:
-            raise ValueError(
-                f"Invalid target position token '{token}' in '{raw_value}'. "
-                "Expected a comma-separated list of integers."
-            ) from e
-        if value not in seen:
-            seen.add(value)
-            parsed.append(value)
-
-    return parsed or None
 
 
 def _is_complete_result_file(
@@ -84,7 +48,15 @@ def _write_json_atomic(file_path: pathlib.Path, payload: dict) -> None:
 
 def run(
     *,
+    source_model_name: str,
+    source_dataset: str,
+    target_dataset: str,
+    target_model_name: str | None = None,
+    src_prompt_template: str = "gsm8k_cot",
+    tgt_prompt_template: str = "gsm8k_non_cot",
     sample_idx: int = 0,
+    max_gen_len: int = 400,
+    source_max_gen_len: int | None = None,
     layer: int | None = None,
     start_layer: int = 0,
     layer_stride: int = 1,
@@ -92,16 +64,19 @@ def run(
     target_pos: int | None = None,
     target_positions: list[int] | None = None,
     output_dir: str = "patch_pos_sweep_results",
-    patch_from_generation: bool = False,
-    source_dataset: str = "outputs/single_batch_output_cot.json",
-    target_dataset: str = "outputs/single_batch_output_non_cot.json",
-    source_model_name: str = "meta-llama/Llama-3.1-8B-Instruct",
-    target_model_name: str | None = None,
-    src_prompt_template: str = "gsm8k_cot",
-    tgt_prompt_template: str = "gsm8k_non_cot",
+    patch_from_generation: bool = True,
+    gen_cache_dir: str | None = None,
+    extraction_mode: ExtractionMode = "flexible",
     resume: bool = False,
     seed: int = 42,
 ) -> None:
+    """Patch one source hidden state per ``(layer, target_pos, source_pos)`` and save the generations.
+
+    One ``layer_<L>_pos_<T>.json`` file is written per (layer, target position), with ``<L>``
+    1-indexed. ``max_gen_len`` bounds both the source CoT generation and the post-patch
+    generation; ``source_max_gen_len`` overrides it for the source CoT only. Set
+    ``gen_cache_dir`` to avoid regenerating the source CoT for every patch.
+    """
     if target_positions is not None and target_pos is not None:
         raise ValueError("Provide either task.target_pos or task.target_positions, not both.")
     if layer is None and layer_stride <= 0:
@@ -110,15 +85,18 @@ def run(
     output_path = pathlib.Path(output_dir)
     output_path.mkdir(parents=True, exist_ok=True)
 
-    # Initial config
+    # Initial config; layer, target position and source position are updated per iteration.
     initial_layer = layer if layer is not None else 0
     patch_config = PatchConfig(
-        max_gen_len=400,
+        max_gen_len=max_gen_len,
+        source_max_gen_len=source_max_gen_len,
         source_layer=initial_layer,
         target_layer=initial_layer,
         patch_position=target_pos,
         hs_selection=0,
         include_all_tokens=True,
+        gen_cache_dir=gen_cache_dir,
+        extraction_mode=extraction_mode,
     )
 
     runner = PatchRunner(
@@ -136,18 +114,9 @@ def run(
 
     # 1. Determine source length
     print("Determining source hidden states length...")
-    _q, _a, batched_input_source = prepare_batch_data(
-        runner.source_data,
-        sample_idx,
-        1,
-        include_importance=False,
-        tokenizer=runner.source_mt.tokenizer,
-    )
+    _q, _a, batched_input_source = prepare_batch_data(runner.source_data, sample_idx, 1)
 
-    source_convos = build_prompt_batch(
-        runner.src_prompter,
-        batched_input_source,
-    )
+    source_convos = build_prompt_batch(runner.src_prompter, batched_input_source)
     rendered_source_prompts = render_prompts(
         runner.source_mt.tokenizer,
         source_convos,
@@ -177,53 +146,39 @@ def run(
     num_source_tokens = source_hs.size(1)
     print(f"Source has {num_source_tokens} tokens.")
 
-    # 2. Determine target length
+    # 2. Determine target length (rendered exactly as patch_and_generate renders it)
     print("Determining target prompt length...")
-    _q_tgt, _a_tgt, batched_input_tgt = prepare_batch_data(
-        runner.target_data,
-        sample_idx,
-        1,
-        include_importance=False,
-        tokenizer=runner.target_mt.tokenizer,
-    )
+    target_supports_system_prompt = bool(getattr(runner.target_mt, "is_instruct_model", False))
+    _q_tgt, _a_tgt, batched_input_tgt = prepare_batch_data(runner.target_data, sample_idx, 1)
 
-    target_convos = build_prompt_batch(
-        runner.tgt_prompter,
-        batched_input_tgt,
-    )
+    target_convos = build_prompt_batch(runner.tgt_prompter, batched_input_tgt)
     rendered_tgt_prompts = render_prompts(
         runner.target_mt.tokenizer,
         target_convos,
-        system_prompt=True,
-        add_generation_prompt=True,
+        system_prompt=target_supports_system_prompt,
+        add_generation_prompt=target_supports_system_prompt,
     )
     tokenized_tgt = make_inputs(
         runner.target_mt.tokenizer,
         target_convos,
         device=runner.target_mt.device,
-        system_prompt=True,
-        add_generation_prompt=True,
+        system_prompt=target_supports_system_prompt,
+        add_generation_prompt=target_supports_system_prompt,
         rendered_prompts=rendered_tgt_prompts,
     )
 
     num_target_tokens = tokenized_tgt["input_ids"].shape[1]
     print(f"Target has {num_target_tokens} tokens.")
 
-    # Get source and target details for output
-    source_item = runner.source_data[sample_idx]
-    target_item = runner.target_data[sample_idx]
-    source_item.get("question", source_item.get("Question", ""))
-    source_answer = source_item.get("answer", source_item.get("Answer", ""))
-    target_item.get("question", target_item.get("Question", ""))
-    target_answer = target_item.get("answer", target_item.get("Answer", ""))
+    # Gold answers and the source model's own CoT, recorded in every output file
+    source_answer = runner.source_data[sample_idx].get("answer", "")
+    target_answer = runner.target_data[sample_idx].get("answer", "")
 
     source_generated_answer = ""
-    if source_extracted_answers and "answer_text" in source_extracted_answers:
-        ans_list = source_extracted_answers["answer_text"]
-        if ans_list and len(ans_list) > 0:
-            source_generated_answer = ans_list[0]
+    answer_texts = source_extracted_answers.get("answer_text") if source_extracted_answers else None
+    if answer_texts:
+        source_generated_answer = answer_texts[0]
 
-    # Store prompts for output
     source_prompt = rendered_source_prompts[0]
     target_prompt = rendered_tgt_prompts[0]
 
@@ -311,9 +266,7 @@ def run(
                 patch_entry = {
                     "pos": src_pos,
                     "patching_token": single_res.get("patch_from", ""),
-                    "generated_text": single_res.get(
-                        "generated_text", single_res.get("Generated Answer_cot", "")
-                    ),
+                    "generated_text": single_res.get("Generated Answer_cot", ""),
                 }
                 patch_results.append(patch_entry)
 

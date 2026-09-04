@@ -161,8 +161,8 @@ def get_source_hidden_states(
     all_source_hs = None
 
     if patch_from_generation:
-        # Check for cache configuration
-        cache_dir = getattr(cfg, "gen_cache_dir", None)
+        source_max_gen_len = cfg.source_max_gen_len or cfg.max_gen_len
+        cache_dir = cfg.gen_cache_dir
         cached_data = None
 
         if cache_dir:
@@ -173,14 +173,16 @@ def get_source_hidden_states(
             model_name = getattr(source_mt.model, "name_or_path", "unknown_model")
             # Include layer, max_len, and batch_size in hash to differentiate experiments
             cache_key_str = (
-                f"{prompt_str}_{cfg.source_layer}_{cfg.max_gen_len}_{model_name}_{batch_size}"
+                f"{prompt_str}_{cfg.source_layer}_{source_max_gen_len}_{model_name}_{batch_size}"
             )
             cache_hash = hashlib.md5(cache_key_str.encode("utf-8")).hexdigest()
             cache_path = os.path.join(cache_dir, f"gen_cache_{cache_hash}.pt")
 
             if os.path.exists(cache_path):
                 try:
-                    cached_data = torch.load(cache_path, map_location=source_mt.device)
+                    cached_data = torch.load(
+                        cache_path, map_location=source_mt.device, weights_only=True
+                    )
                 except Exception as e:
                     print(f"Warning: Failed to load cache {cache_path}: {e}")
 
@@ -192,7 +194,7 @@ def get_source_hidden_states(
         else:
             generation = source_mt.model.generate(
                 **tokenized_source,
-                max_new_tokens=cfg.max_gen_len,
+                max_new_tokens=source_max_gen_len,
                 eos_token_id=source_eos_ids,
                 pad_token_id=source_pad_id,
                 do_sample=False,
@@ -426,8 +428,8 @@ def patch_and_generate(
             if not pos_list:
                 sample_vec = all_source_hs.new_zeros((0, hidden_size))
             else:
-                idx = torch.tensor(pos_list, device=hs_device, dtype=torch.long)
-                sample_vec = all_source_hs[i].index_select(0, idx)
+                pos_index = torch.tensor(pos_list, device=hs_device, dtype=torch.long)
+                sample_vec = all_source_hs[i].index_select(0, pos_index)
             selected_samples.append(sample_vec)
         selected_source_hs = torch.stack(selected_samples, dim=0)
 

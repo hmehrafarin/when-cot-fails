@@ -1,6 +1,7 @@
 name: patch
 batch_size: 1
 max_gen_len: 400
+source_max_gen_len: null
 source_layer: -1
 target_layer: -1
 hs_selection: -1

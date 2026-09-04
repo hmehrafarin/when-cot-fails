@@ -9,7 +9,7 @@ from tqdm import tqdm
 from ri.common import choose_torch_dtype, get_dataset, prepare_batch_data, set_random_seed
 from ri.core.model import ModelAndTokenizer
 from ri.prompts.prompter import Prompter
-from ri.settings.settings import Constants
+from ri.settings import MODEL_CACHE_DIR
 from ri.tracking import ExperimentTracker
 from ri.utils.extraction import extract_answer
 
@@ -32,7 +32,7 @@ class PatchRunner:
         patch_config: PatchConfig,
         seed: int,
         target_model_name: str | None = None,
-        cache_dir: str = Constants.HUGGINGFACE_CACHE_DIR,
+        cache_dir: str = MODEL_CACHE_DIR,
     ):
         set_random_seed(seed, deterministic=True)
 
@@ -79,24 +79,13 @@ class PatchRunner:
         self.tgt_prompter = Prompter(template_name=tgt_prompt_template)
 
     def _run_single_batch(self, batch_idx: int) -> dict[str, list]:
-        # NOTE: token-importance selection is retained for backwards compatibility with earlier runs.
-        _q, a, batched_input_source = prepare_batch_data(
-            self.source_data,
-            batch_idx,
-            self.batch_size,
-            include_importance=False,
-            tokenizer=self.source_mt.tokenizer,
+        _q, _a, batched_input_source = prepare_batch_data(
+            self.source_data, batch_idx, self.batch_size
         )
-
         q_tgt, a_tgt, batched_input_tgt = prepare_batch_data(
-            self.target_data,
-            batch_idx,
-            self.batch_size,
-            include_importance=False,
-            tokenizer=self.target_mt.tokenizer,
+            self.target_data, batch_idx, self.batch_size
         )
 
-        extract_answer(a)
         numeric_answers = extract_answer(a_tgt)
 
         gen = patch_and_generate(
@@ -190,6 +179,7 @@ def run_patch(
     tgt_prompt_template: str,
     batch_size: int,
     max_gen_len: int,
+    source_max_gen_len: int | None = None,
     source_layer: int,
     target_layer: int,
     patch_position: int | None,
@@ -204,6 +194,7 @@ def run_patch(
 ) -> None:
     patch_config = PatchConfig(
         max_gen_len=max_gen_len,
+        source_max_gen_len=source_max_gen_len,
         source_layer=source_layer,
         target_layer=target_layer,
         patch_position=patch_position,

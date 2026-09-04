@@ -14,11 +14,11 @@ from ri.common import (
 )
 from ri.core.model import ModelAndTokenizer
 from ri.prompts.prompter import Prompter
-from ri.settings.settings import Constants
+from ri.settings import MODEL_CACHE_DIR
 from ri.tracking import ExperimentTracker
 from ri.utils.extraction import extract_answer
 
-from .config import EvaluationConfig
+from .config import EvaluationConfig, ExtractionMode
 from .pipeline import generate_batch_outputs
 
 
@@ -30,7 +30,7 @@ def run_evaluation(
     max_gen_len: int,
     seed: int,
     output_file: str,
-    extraction_mode: str = "flexible",
+    extraction_mode: ExtractionMode = "flexible",
     tracker: ExperimentTracker | None = None,
 ) -> None:
     config = EvaluationConfig(
@@ -70,18 +70,14 @@ class EvaluationRunner:
         self.mt = ModelAndTokenizer(
             model_name=model_name,
             torch_dtype=torch_dtype,
-            cache_dir=Constants.HUGGINGFACE_CACHE_DIR,
+            cache_dir=MODEL_CACHE_DIR,
         )
 
         self.prompter = Prompter(template_name=prompt_template)
 
     def _run_single_batch(self, batch_idx: int):
         batch_questions, batch_answers, batched_input = prepare_batch_data(
-            self.data,
-            batch_idx,
-            self.config.batch_size,
-            include_importance=False,
-            tokenizer=self.mt.tokenizer,
+            self.data, batch_idx, self.config.batch_size
         )
 
         numeric_answers = extract_answer(batch_answers)

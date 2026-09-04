@@ -18,36 +18,3 @@ MODEL_CACHE_DIR: str = HUGGINGFACE_CACHE_DIR
 PROJECT_DIR: str = os.getenv("PROJECTDIR", "/tmp")
 
 PATCH_LOGITS_CACHE_DIR: str = os.path.join(PROJECT_DIR, "patch_logits")
-
-# --------------------------------------------------------------------------- #
-# Default model configuration
-# --------------------------------------------------------------------------- #
-
-DEFAULT_MODEL_NAME: str = os.getenv(
-    "RI_DEFAULT_MODEL",
-    "meta-llama/Llama-3.1-8B-Instruct",
-)
-
-# --------------------------------------------------------------------------- #
-# Experiment defaults
-# --------------------------------------------------------------------------- #
-
-DEFAULT_SEED: int = 42
-DEFAULT_BATCH_SIZE: int = 16
-DEFAULT_MAX_GEN_LEN: int = 400
-
-
-# --------------------------------------------------------------------------- #
-# Legacy compatibility: Constants class
-# --------------------------------------------------------------------------- #
-
-
-class Constants:
-    """
-    Legacy configuration class for backwards compatibility.
-
-    Prefer using module-level constants directly instead.
-    """
-
-    HUGGINGFACE_CACHE_DIR = HUGGINGFACE_CACHE_DIR
-    MODEL_CACHE_DIR = MODEL_CACHE_DIR

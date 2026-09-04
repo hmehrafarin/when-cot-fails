@@ -1,5 +1,7 @@
 name: patch_position_sweep
 sample_idx: 0
+max_gen_len: 400
+source_max_gen_len: null
 layer: null
 start_layer: 0
 layer_stride: 1
@@ -7,5 +9,7 @@ include_final_layer: false
 target_pos: null
 target_positions: null
 output_dir: patch_pos_sweep_results
-patch_from_generation: false
+patch_from_generation: true
+gen_cache_dir: null
+extraction_mode: flexible
 resume: false

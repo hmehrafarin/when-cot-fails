@@ -189,6 +189,8 @@ def run_patch(
     include_all_tokens: bool = False,
     gen_cache_dir: str | None = None,
     extraction_mode: ExtractionMode = "flexible",
+    perturb_cosine: float | None = None,
+    perturb_seed: int | None = None,
     output_file: str,
     tracker: ExperimentTracker | None = None,
 ) -> None:
@@ -202,6 +204,8 @@ def run_patch(
         include_all_tokens=include_all_tokens,
         gen_cache_dir=gen_cache_dir,
         extraction_mode=extraction_mode,
+        perturb_cosine=perturb_cosine,
+        perturb_seed=seed if perturb_seed is None else perturb_seed,
     )
 
     runner = PatchRunner(

@@ -24,6 +24,7 @@ from .tensor_ops import (
     compute_core_token_positions,
     left_pad_offsets,
     mask_to_positions,
+    rotate_toward_random_direction,
 )
 
 
@@ -453,6 +454,13 @@ def patch_and_generate(
             )
             for i in range(len(source_selected_tokens))
         ]
+
+    if cfg.perturb_cosine is not None:
+        # Appendix C: rotate the patched state to a fixed cosine similarity, norm preserved.
+        generator = torch.Generator().manual_seed(cfg.perturb_seed)
+        selected_source_hs = rotate_toward_random_direction(
+            selected_source_hs, cfg.perturb_cosine, generator
+        )
 
     tgt_input_ids = tokenized_tgt["input_ids"]
     target_patch_tokens: list[str] = []

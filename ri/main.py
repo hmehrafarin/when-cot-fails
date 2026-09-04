@@ -32,6 +32,13 @@ def _resolve_int_list(raw: object) -> list[int] | None:
     return [int(tok.strip()) for tok in text.split(",") if tok.strip()] or None
 
 
+def _resolve_float_list(raw: object) -> list[float]:
+    """Accept a comma-separated string or a list — return list[float]."""
+    if isinstance(raw, (list, tuple, ListConfig)):
+        return [float(v) for v in raw]
+    return [float(tok.strip()) for tok in str(raw).split(",") if tok.strip()]
+
+
 @hydra.main(
     version_base=None,
     config_path=str(Path(__file__).parent / "conf"),
@@ -85,6 +92,8 @@ def _dispatch(cfg: DictConfig, task: str, tracker: ExperimentTracker) -> None:
             patch_from_generation=cfg.task.patch_from_generation,
             gen_cache_dir=cfg.task.gen_cache_dir,
             extraction_mode=cfg.task.get("extraction_mode", "flexible"),
+            perturb_cosine=cfg.task.perturb_cosine,
+            perturb_seed=cfg.task.perturb_seed,
             output_file=cfg.task.output_file,
             tracker=tracker,
         )
@@ -180,6 +189,31 @@ def _dispatch(cfg: DictConfig, task: str, tracker: ExperimentTracker) -> None:
             source_tokens_file=cfg.task.source_tokens_file,
             entity_codes_file=cfg.task.entity_codes_file,
             behavior_codes_file=cfg.task.behavior_codes_file,
+        )
+
+    elif task == "noise_control":
+        from ri.patching.noise_control import run_noise_control
+
+        run_noise_control(
+            results_csv=cfg.task.results_csv,
+            output_dir=cfg.task.output_dir,
+            source_model_name=cfg.model.source_model_name,
+            target_model_name=cfg.model.target_model_name,
+            source_dataset=cfg.dataset.source_dataset,
+            target_dataset=cfg.dataset.target_dataset,
+            src_prompt_template=cfg.dataset.src_prompt_template,
+            tgt_prompt_template=cfg.dataset.tgt_prompt_template,
+            n_examples=cfg.task.n_examples,
+            sample_indices=_resolve_int_list(cfg.task.sample_indices),
+            alphas=_resolve_float_list(cfg.task.alphas),
+            target_pos=cfg.task.target_pos,
+            max_gen_len=cfg.task.max_gen_len,
+            source_max_gen_len=cfg.task.source_max_gen_len,
+            gen_cache_dir=cfg.task.gen_cache_dir,
+            extraction_mode=cfg.task.get("extraction_mode", "flexible"),
+            resume=cfg.task.resume,
+            summarize_only=cfg.task.summarize_only,
+            seed=cfg.seed,
         )
 
     else:

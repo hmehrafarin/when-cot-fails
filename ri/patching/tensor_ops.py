@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import math
 from collections.abc import Sequence
+
+import torch
 
 
 def left_pad_offsets(tokenized_batch) -> list[int]:
@@ -106,3 +109,31 @@ def compute_core_token_positions(
         start_offsets.append(absolute_start)
 
     return all_positions, start_offsets
+
+
+def rotate_toward_random_direction(
+    hidden: torch.Tensor,
+    cosine: float,
+    generator: torch.Generator,
+) -> torch.Tensor:
+    """Return a norm-matched vector at cosine similarity ``cosine`` to ``hidden`` (Appendix C).
+
+    Computes ``h~ = ||h|| (a h^ + sqrt(1 - a^2) u^)`` along the last dimension, where ``u^`` is a
+    random unit direction orthogonal to ``h`` drawn from ``generator`` (a CPU generator, so the
+    draw is reproducible across devices). ``cosine=1`` returns ``h`` and ``cosine=0`` a fully
+    random direction with the original magnitude. Leading dimensions are treated as batch
+    dimensions; the result has the dtype of ``hidden``.
+    """
+    if not 0.0 <= cosine <= 1.0:
+        raise ValueError(f"cosine must be in [0, 1], got {cosine!r}")
+
+    h = hidden.detach().to(torch.float32)
+    norm = h.norm(dim=-1, keepdim=True)
+    unit = h / norm.clamp_min(1e-12)
+
+    noise = torch.randn(h.shape, generator=generator, dtype=torch.float32).to(h.device)
+    noise = noise - (noise * unit).sum(dim=-1, keepdim=True) * unit
+    noise = noise / noise.norm(dim=-1, keepdim=True).clamp_min(1e-12)
+
+    rotated = norm * (cosine * unit + math.sqrt(1.0 - cosine * cosine) * noise)
+    return rotated.to(hidden.dtype)

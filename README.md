@@ -418,4 +418,14 @@ Released under the MIT License. See [LICENSE](LICENSE).
 
 ## Citation
 
-Coming Soon!
+```bibtex
+@misc{mehrafarin2026chainofthoughtfailssolutionhides,
+      title={When Chain-of-Thought Fails, the Solution Hides in the Hidden States}, 
+      author={Houman Mehrafarin and Amit Parekh and Ioannis Konstas},
+      year={2026},
+      eprint={2604.23351},
+      archivePrefix={arXiv},
+      primaryClass={cs.CL},
+      url={https://arxiv.org/abs/2604.23351}, 
+}
+```

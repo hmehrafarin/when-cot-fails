@@ -27,7 +27,7 @@ incorrectly.
 direct-answer prompt, which usually fails. Stage 3 patches one cached state into the target run's
 final position and measures the effect on the answer.*
 
-Experiments run in three stages:
+Experiments run in four stages:
 
 1. **Generate** — evaluate a model on GSM-8K under the CoT and direct-answer prompts, producing two JSON
    files of prompts, generations and extracted answers.
@@ -36,11 +36,14 @@ Experiments run in three stages:
    `pe_analysis` computes the patch effect on the target run's answer probability.
 3. **Postprocess** — `full_results` turns the sweep output into a labelled CSV, assigning each source
    token one of 12 role labels and each post-patch generation one of 7 behaviour types.
+4. **Control** — `noise_control` replays the successful patches with the source state rotated to a fixed
+   cosine similarity while keeping its norm, the direction-noise control of Appendix C.
 
 The paper's configuration is LLaMA 3.1 8B-Instruct and Qwen 2.5 7B-Instruct on the 1,319 GSM-8K test
-examples, greedy decoding, seed 42, batch size 1, `max_gen_len=400` (800 for Qwen source runs), patching
-every other layer plus the final layer (`task.layer_stride=2 task.include_final_layer=true`) at the final
-target position (`task.target_pos=-1`).
+examples, greedy decoding, seed 42, batch size 1, `task.max_gen_len=400` (`task.source_max_gen_len=800`
+for Qwen source runs), source hidden states taken from the generated CoT (`task.patch_from_generation=true`),
+patching every other layer plus the final layer (`task.layer_stride=2 task.include_final_layer=true`) at
+the final target position (`task.target_pos=-1`).
 
 ## Setup
 
@@ -69,7 +72,7 @@ All experiments are driven through [Hydra](https://hydra.cc/) configs composed f
 ```
 ri/conf/
 ├── config.yaml          # root — picks one task / model / dataset / tracking
-├── task/                # evaluate, patch, cma, pe_analysis, patch_position_sweep, full_results
+├── task/                # evaluate, patch, cma, pe_analysis, patch_position_sweep, full_results, noise_control
 ├── model/               # llama_8b, qwen_7b
 ├── dataset/             # gsm8k
 └── tracking/            # disabled, wandb
@@ -86,6 +89,9 @@ Unknown override keys are rejected before anything is loaded, and task parameter
 model weights are read. Add `--cfg job` to print the composed config and exit without loading a model —
 the cheapest way to check that a set of overrides resolves.
 
+Weights & Biases logging is off by default. Enable it with `tracking=wandb`; the project name and tags
+live in `ri/conf/tracking/wandb.yaml`, and every task still writes its local outputs regardless.
+
 ### Environment variables
 
 | Variable | Description | Default |
@@ -101,8 +107,10 @@ cache.
 - **Logit cache** — on by default. Per-source-position logits for PE analysis are written to
   `$PROJECTDIR/patch_logits/`. Disable with `task.cache_logits=false`, relocate with
   `task.logit_cache_dir`.
-- **Generation cache** — off by default. Set `task.gen_cache_dir=<path>` on the `patch` task to reuse
-  source generations across runs.
+- **Generation cache** — off by default. Set `task.gen_cache_dir=<path>` on the `patch` or
+  `patch_position_sweep` task to reuse source generations and their hidden states across runs. The sweep
+  otherwise regenerates the source CoT for every `(layer, target_pos, source_pos)` patch, so set it for
+  anything beyond a single layer and position.
 
 To clear cached data, delete the relevant directories.
 
@@ -145,6 +153,7 @@ uv run ri task=patch_position_sweep \
     dataset.target_dataset=outputs/single_batch_output_non_cot.json \
     task.sample_idx=0 \
     task.patch_from_generation=true \
+    task.gen_cache_dir=gen_cache \
     task.layer=15 \
     task.target_pos=-1 \
     task.output_dir=patch_pos_sweep_results/sample_0
@@ -156,8 +165,13 @@ Key overrides:
 - `task.start_layer`, `task.layer_stride` — control the layer sweep range
 - `task.include_final_layer=true` — always include the last layer, even if `task.layer_stride` skips it
 - `task.target_pos` — patch at a specific target position (otherwise sweeps all)
-- `task.target_positions` — comma-separated target positions, e.g. `"0,-1"`
-- `task.patch_from_generation=true` — take source hidden states from generation rather than the prompt
+- `task.target_positions` — list of target positions, e.g. `task.target_positions=[0,-1]`
+- `task.patch_from_generation` — take source hidden states from the generated CoT (default `true`); `false`
+  patches from the source prompt tokens instead
+- `task.max_gen_len` — generation budget for the source CoT and for the post-patch generation (default 400)
+- `task.source_max_gen_len` — separate budget for the source CoT only (the paper uses 800 for Qwen)
+- `task.gen_cache_dir` — cache the source generation and hidden states on disk (see Caching)
+- `task.extraction_mode` — `flexible` (default) or `strict` answer extraction
 - `task.resume=true` — skip completed output files
 - `seed` — root-level, forwarded to the sweep
 
@@ -174,7 +188,8 @@ Dropping `task.layer` and `task.target_pos` sweeps the full grid, which is rough
 #### Patch effect (PE) analysis
 
 For each source token position, patches its hidden state from every layer into every target position and
-measures the change in the target model's answer probability:
+measures the change in the target model's answer probability. Source hidden states are always taken from
+the generated CoT:
 
 ```
 PE = (before_patch_target_prob - after_patch_target_prob) / max(after_patch_target_prob, 1e-10)
@@ -183,7 +198,7 @@ PE = (before_patch_target_prob - after_patch_target_prob) / max(after_patch_targ
 ```bash
 uv run ri task=pe_analysis \
     dataset.source_dataset=outputs/single_batch_output_cot.json \
-    dataset.target_dataset=outputs/single_batch_output_cot.json \
+    dataset.target_dataset=outputs/single_batch_output_non_cot.json \
     task.sample_idx=0 \
     task.output_dir=pe_output
 ```
@@ -191,9 +206,8 @@ uv run ri task=pe_analysis \
 Key overrides:
 
 - `task.start_src_pos` — starting source position, negative indexing supported
-- `task.target_positions` — comma-separated target positions, e.g. `"0,-1"`
+- `task.target_positions` — list of target positions, e.g. `task.target_positions=[0,-1]`
 - `task.cache_logits` — cache logits for reuse across runs (default: true)
-- `task.patch_from_generation` — source hidden states from generation rather than prompt (default: true)
 - `task.resume=true` — skip completed source position files
 
 Results are written to `<task.output_dir>/sample_<idx>/source_<pos>.json`, one file per source position,
@@ -205,6 +219,17 @@ with a `patch_effect` value per layer and target position.
 per-generation `generation_type` labels, numeric correctness, token-length columns, step segmentation and
 sidecar codebooks. The taxonomies are defined in `ri/postprocess/codebooks.py` and
 `ri/postprocess/generation_labels.py`.
+
+Role labels are the 12 categories of Table 1 in the paper, written in upper case (`ENTITY`, `VERB`,
+`QUANTITY`, `UNIT`, `STEP`, `OPERAND`, `OPERATOR`, `EQUALS`, `RESULT`, `NUMBER`, `PUNCT`, `OTHER`), and
+generation types are the seven output types of Table 6 in snake case (`full_cot`, `equation_only`,
+`partial_cot`, `final_only`, `text_only`, `noise`, `none`).
+
+The aggregate results in the paper are computed from this table with the definitions of Section 3.4:
+patch recoverability is whether any row of an example has `is_correct`, patch success density is the
+per-example mean of `is_correct`, and the patch success rate of a group (a layer, a token role, a
+position quartile) is the per-example success rate within that group averaged over the examples that
+have it.
 
 Two output schemas are available:
 
@@ -253,11 +278,57 @@ Key overrides:
 - `task.pe_root` — PE output root; required for `published_export`
 - `task.eval_json` — original CoT eval JSON, improves `published_export` alignment
 - `task.spacy_model` — spaCy pipeline for entity tagging (default `en_core_web_sm`)
-- `task.generation_other_label` — `noise` or `other`; defaults to `noise` for `full_results` and `other`
-  for `published_export`
+- `task.source_tokens_file`, `task.entity_codes_file`, `task.behavior_codes_file` — override the sidecar
+  paths derived from `task.output_file`
+- `task.progress_every` — print progress every N samples (default 25; 0 disables)
 
 `model.target_model_name` must contain `llama` or `qwen`; postprocessing derives its token-alignment
 family from that string and raises otherwise.
+
+### Step 4: Direction-noise control (Appendix C)
+
+`task=noise_control` checks that recovery depends on the content of the patched state rather than on
+perturbing the target position. It reads a `full_results` CSV, samples `task.n_examples` examples with the
+root seed, and replays every patch that recovered the correct answer with the source state rotated to a
+fixed cosine similarity `alpha` while keeping its norm:
+
+```
+h_tilde = ||h|| * (alpha * h / ||h|| + sqrt(1 - alpha^2) * u)
+```
+
+`u` is a random unit direction orthogonal to `h`, drawn once per patch from a seed derived from the root
+seed and the patch coordinates and shared across all `alpha` levels, so the levels form a paired
+comparison. `alpha=1` is the unmodified patch and `alpha=0` a fully random direction with the original
+magnitude.
+
+```bash
+uv run ri task=noise_control \
+    dataset.source_dataset=outputs/single_batch_output_cot.json \
+    dataset.target_dataset=outputs/single_batch_output_non_cot.json \
+    task.results_csv=outputs/full_results.csv \
+    task.output_dir=noise_control_output
+```
+
+Key overrides:
+
+- `task.alphas` — cosine levels, default `[1.0, 0.75, 0.5, 0.25, 0.0]`; override as `task.alphas=[0.5,0.0]`
+- `task.n_examples` — examples to sample (default 100); `task.sample_indices=[3,17,42]` replays exactly
+  those examples instead, which is how to shard the run across jobs
+- `task.target_pos` — keep only patches at this requested target position (default: all in the CSV)
+- `task.max_gen_len`, `task.source_max_gen_len`, `task.extraction_mode` — must match the sweep that produced
+  the CSV, otherwise the replayed source CoT differs from the one whose patches succeeded
+- `task.gen_cache_dir` — source-state cache; defaults to `<task.output_dir>/gen_cache`
+- `task.resume=true` — skip patch/alpha pairs already present in the output files
+- `task.summarize_only=true` — rebuild the summary from existing output files without loading a model
+
+Output is one `sample_<idx>.jsonl` per example with a row per patch and `alpha` (generated text, predicted
+number, correctness, and the patched token so drift from the original sweep is visible), plus `summary.csv`
+with the percentage of patches that still recover the correct answer at each `alpha` (Table 8 in the
+paper). Every row is a full generation: the paper's setting of 100 examples and five `alpha` levels is
+roughly 325,000 generations, so shard with `task.sample_indices` and use `task.resume`.
+
+The same perturbation is available on the single-run `patch` task through `task.perturb_cosine` and
+`task.perturb_seed`.
 
 ### Standalone tasks
 
@@ -267,7 +338,7 @@ family from that string and raises otherwise.
 # Single patching run
 uv run ri task=patch \
     dataset.source_dataset=outputs/single_batch_output_cot.json \
-    dataset.target_dataset=outputs/single_batch_output_cot.json \
+    dataset.target_dataset=outputs/single_batch_output_non_cot.json \
     task.source_layer=15 task.target_layer=15 \
     task.patch_from_generation=true \
     task.output_file=output_patched.json
@@ -275,14 +346,14 @@ uv run ri task=patch \
 # Causal mediation analysis
 uv run ri task=cma \
     dataset.source_dataset=outputs/single_batch_output_cot.json \
-    dataset.target_dataset=outputs/single_batch_output_cot.json \
+    dataset.target_dataset=outputs/single_batch_output_non_cot.json \
     task.source_layer=25 task.target_layer=25 \
     task.output_file=patch_position_analysis.json
 ```
 
 Shared overrides: `task.hs_selection` (which source token to lift, `-1` for the last),
 `task.include_all_tokens`, `task.patch_position`, `task.extraction_mode` (`flexible` or `strict`),
-`task.max_gen_len`.
+`task.max_gen_len`, `task.source_max_gen_len`.
 
 ### Grid sweeps (`--multirun`)
 
@@ -324,13 +395,22 @@ runner. Follow `ri/patching/config.py` if you want Pydantic validation of the ta
 - `ri/settings/` — environment and path constants
 - `ri/common/` — seeding, batching, dataset loading, chat-prompt assembly
 - `ri/core/` — model loading and forward hook infrastructure
-- `ri/patching/` — patching pipeline, tensor operations, `pe_analysis` and `patch_position_sweep`
+- `ri/patching/` — patching pipeline, tensor operations, `pe_analysis`, `patch_position_sweep` and
+  `noise_control`
 - `ri/patching/cma/` — causal mediation analysis
 - `ri/postprocess/` — full-results builders, spaCy entity tagging, label codebooks
 - `ri/prompts/` — prompt templates and construction
 - `ri/evaluation/` — generation and evaluation runner
 - `ri/tracking.py` — optional Weights & Biases tracker
-- `ri/utils/` — tokenizer helpers, answer extraction, text utilities
+- `ri/utils/` — tokenizer helpers, answer extraction and scoring, text utilities
+- `tests/` — checks for the direction-noise control; run with `pytest` or `python tests/test_noise_control.py`
+
+## Development
+
+`uv sync` installs the dev group (ruff, mypy, codespell, deptry, pre-commit). Install the hooks with
+`uv run pre-commit install`; they run ruff, ruff-format, codespell, mypy and deptry inside the project
+environment. The checks in `tests/` run under pytest (`uv add --dev pytest` once, then `uv run pytest`) or
+directly with `uv run python tests/test_noise_control.py`.
 
 ## License
 

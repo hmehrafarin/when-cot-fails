@@ -177,7 +177,8 @@ class PatchEffectAnalyzer(CausalMediationRunner):
     Analyzer for computing patch effects across all layers and target positions.
 
     For each layer, iterates over target positions and computes the
-    patch effect when patching source hidden states.
+    patch effect when patching source hidden states. Source hidden states are
+    always taken from the source model's generated CoT.
     """
 
     def __init__(
@@ -187,7 +188,6 @@ class PatchEffectAnalyzer(CausalMediationRunner):
         target_dataset: str,
         src_prompt_template: str = "gsm8k_cot",
         tgt_prompt_template: str = "gsm8k_non_cot",
-        patch_from_generation: bool = True,
         seed: int = 42,
         target_model_name: str | None = None,
         max_gen_len: int = 400,
@@ -208,7 +208,7 @@ class PatchEffectAnalyzer(CausalMediationRunner):
             target_dataset=target_dataset,
             src_prompt_template=src_prompt_template,
             tgt_prompt_template=tgt_prompt_template,
-            patch_from_generation=patch_from_generation,
+            patch_from_generation=True,
             patch_config=patch_config,
             seed=seed,
             target_model_name=target_model_name,
@@ -230,7 +230,6 @@ class PatchEffectAnalyzer(CausalMediationRunner):
     def _get_all_layers_hidden_states(
         self,
         tokenized_source: dict[str, torch.Tensor],
-        source_prompt_texts: list[str],
     ) -> tuple[list[torch.Tensor], torch.Tensor]:
         """
         Get hidden states from all layers during generation.
@@ -285,7 +284,7 @@ class PatchEffectAnalyzer(CausalMediationRunner):
 
         # Build source inputs
         batched_input_source = make_batched_input(source_sample, include_generated=True)
-        _, _, source_prompt_texts, tokenized_source = build_prompt_inputs(
+        _, _, _, tokenized_source = build_prompt_inputs(
             source_tokenizer,
             self.src_prompter,
             batched_input_source,
@@ -295,9 +294,7 @@ class PatchEffectAnalyzer(CausalMediationRunner):
         )
 
         # Get hidden states from all layers and generated token IDs
-        all_layers_hs, generated_ids = self._get_all_layers_hidden_states(
-            tokenized_source, source_prompt_texts
-        )
+        all_layers_hs, generated_ids = self._get_all_layers_hidden_states(tokenized_source)
 
         # Build target inputs
         batched_input_tgt = make_batched_input(target_sample, include_generated=False)
@@ -327,16 +324,10 @@ class PatchEffectAnalyzer(CausalMediationRunner):
                 f"requested={self.target_positions}, valid_count={len(valid_target_positions)}"
             )
 
-        # Decode source CoT from the generation we just ran, falling back to a
-        # pre-generated field on the source sample if present (legacy JSON format).
-        source_cot = source_tokenizer.decode(generated_ids[0], skip_special_tokens=True).strip()
-        if not source_cot:
-            legacy = source_sample.get(
-                "Generated Answer_cot", source_sample.get("Generated Answer_CoT", "")
-            )
-            if isinstance(legacy, list):
-                legacy = legacy[0] if legacy else ""
-            source_cot = str(legacy or "").strip()
+        # Decode the source CoT from the generation we just ran.
+        source_cot = str(
+            source_tokenizer.decode(generated_ids[0], skip_special_tokens=True)
+        ).strip()
 
         # Get target baseline generation and answer
         target_pad_id = get_pad_id(target_tokenizer)
@@ -448,7 +439,7 @@ class PatchEffectAnalyzer(CausalMediationRunner):
                     print(f"  Recomputing incomplete result: {output_file}")
 
             # Get the token being patched at this source position
-            patched_token_id = generated_ids[0, src_pos].item()
+            patched_token_id = int(generated_ids[0, src_pos].item())
             patched_token_str = _safe_token_from_id(source_tokenizer, patched_token_id)
 
             # Try to load cached logits for this source position
@@ -584,16 +575,16 @@ class PatchEffectAnalyzer(CausalMediationRunner):
 
 
 def run_pe_analysis(
-    source_model_name: str = "meta-llama/Llama-3.1-8B-Instruct",
+    *,
+    source_model_name: str,
+    source_dataset: str,
+    target_dataset: str,
     target_model_name: str | None = None,
-    source_dataset: str = "outputs/single_batch_output_cot.json",
-    target_dataset: str = "outputs/single_batch_output_cot.json",
     output_dir: str = "pe_output",
     sample_idx: int = 0,
     start_src_pos: int | None = 0,
     seed: int = 42,
     max_gen_len: int = 400,
-    patch_from_generation: bool = True,
     cache_logits: bool = True,
     logit_cache_dir: str | None = None,
     target_positions: str | None = None,
@@ -601,6 +592,8 @@ def run_pe_analysis(
 ) -> None:
     """
     Run patch effect analysis across layers and target positions.
+
+    Source hidden states are always taken from the source model's generated CoT.
 
     Parameters
     ----------
@@ -622,9 +615,6 @@ def run_pe_analysis(
         Random seed.
     max_gen_len : int
         Maximum generation length.
-    patch_from_generation : bool
-        If True, take source hidden states from the source model's generation
-        rather than from its prompt.
     cache_logits : bool
         Whether to cache logits to disk for reuse across runs.
     logit_cache_dir : str | None
@@ -644,7 +634,6 @@ def run_pe_analysis(
         target_dataset=target_dataset,
         seed=seed,
         max_gen_len=max_gen_len,
-        patch_from_generation=patch_from_generation,
         start_src_pos=start_src_pos,
         cache_logits=cache_logits,
         logit_cache_dir=logit_cache_dir,

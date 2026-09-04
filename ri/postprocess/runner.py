@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import csv
 import json
-import math
 import re
 from collections.abc import Sequence
 from dataclasses import dataclass
@@ -12,9 +11,11 @@ from typing import Any
 
 from transformers import AutoTokenizer
 
-from .codebooks import ENTITY_ROLE_CODES
+from ri.utils.extraction import parse_number, score_prediction
+
+from .codebooks import ENTITY_ROLE_CODES, GENERATION_TYPE_CODES
 from .config import PostprocessConfig
-from .generation_labels import classify_generation_type, generation_type_codes
+from .generation_labels import classify_generation_type
 from .spacy_rules import (
     PRIORITY,
     VALID_LABELS,
@@ -25,13 +26,10 @@ from .spacy_rules import (
 
 SAMPLE_DIR_RE = re.compile(r"^sample_(\d+)$")
 SWEEP_FILE_RE = re.compile(r"^layer_(\d+)_pos_(-?\d+)\.json$")
-NUM_RE = re.compile(r"-?\d[\d,]*(?:\.\d+)?")
+SOURCE_PE_FILE_RE = re.compile(r"^source_(\d+)\.json$")
 ANSWER_PREFIX_RE = re.compile(r"(?is)^\s*(?:final\s+answer|answer)\s*[:\-]?\s*")
 FINAL_ANSWER_RE = re.compile(r"(?im)^\s*final answer\s*:")
 FINAL_NUMERIC_RE = re.compile(r"^\s*[-+]?\$?\d[\d,]*(?:\.\d+)?\s*%?\s*$")
-SETUP_HINT_RE = re.compile(
-    r"(?i)\b(let'?s|we(?:\s+need|\s+have|\s+can|\s+will|\s+must)|given|to find|to solve|first|start|consider|we are asked)\b"
-)
 QUESTION_RE = re.compile(r"Question:\s*(.*?)\s*Answer:", flags=re.IGNORECASE | re.DOTALL)
 
 
@@ -45,7 +43,6 @@ def run_postprocess(
     eval_json: str | None = None,
     sample_idx: int = 0,
     spacy_model: str = "en_core_web_sm",
-    generation_other_label: str | None = None,
     progress_every: int = 25,
     source_tokens_file: str | None = None,
     entity_codes_file: str | None = None,
@@ -60,41 +57,12 @@ def run_postprocess(
         eval_json=eval_json,
         sample_idx=sample_idx,
         spacy_model=spacy_model,
-        generation_other_label=generation_other_label,
         progress_every=progress_every,
         source_tokens_file=source_tokens_file,
         entity_codes_file=entity_codes_file,
         behavior_codes_file=behavior_codes_file,
     )
     PostprocessRunner(config).run()
-
-
-def run_full_results(
-    *,
-    sweep_root: str,
-    output_file: str,
-    model_name: str,
-    sample_idx: int = 0,
-    spacy_model: str = "en_core_web_sm",
-    generation_other_label: str | None = None,
-    progress_every: int = 25,
-    source_tokens_file: str | None = None,
-    entity_codes_file: str | None = None,
-    behavior_codes_file: str | None = None,
-) -> None:
-    run_postprocess(
-        sweep_root=sweep_root,
-        output_file=output_file,
-        model_name=model_name,
-        output_schema="full_results",
-        sample_idx=sample_idx,
-        spacy_model=spacy_model,
-        generation_other_label=generation_other_label,
-        progress_every=progress_every,
-        source_tokens_file=source_tokens_file,
-        entity_codes_file=entity_codes_file,
-        behavior_codes_file=behavior_codes_file,
-    )
 
 
 class PostprocessRunner:
@@ -134,10 +102,6 @@ class PostprocessRunner:
         nlp = _load_nlp(self.config.spacy_model)
         tokenizer = AutoTokenizer.from_pretrained(self.config.model_name, use_fast=True)
         token_len_cache: dict[str, int] = {}
-        generation_other_label = _effective_generation_other_label(
-            self.config.output_schema,
-            self.config.generation_other_label,
-        )
         eval_items = (
             _load_eval_items(self.eval_json)
             if self.config.output_schema == "published_export" and self.eval_json is not None
@@ -180,7 +144,6 @@ class PostprocessRunner:
                     eval_items=eval_items,
                     nlp=nlp,
                     tokenizer=tokenizer,
-                    generation_other_label=generation_other_label,
                     token_len_cache=token_len_cache,
                 )
 
@@ -208,7 +171,7 @@ class PostprocessRunner:
         _write_codebook(
             self.behavior_codes_file,
             codebook_name="generation_type",
-            codes=generation_type_codes(generation_other_label),
+            codes=GENERATION_TYPE_CODES,
         )
 
         print(f"Processed samples: {len(sample_sources)}")
@@ -228,7 +191,6 @@ class PostprocessRunner:
         eval_items: list[dict[str, Any]] | None,
         nlp,
         tokenizer,
-        generation_other_label: str,
         token_len_cache: dict[str, int],
     ) -> dict[str, list[dict[str, Any]]]:
         if self.config.output_schema == "full_results":
@@ -238,7 +200,6 @@ class PostprocessRunner:
                 nlp=nlp,
                 tokenizer=tokenizer,
                 alignment_model=self.alignment_model,
-                generation_other_label=generation_other_label,
                 token_len_cache=token_len_cache,
             )
 
@@ -259,19 +220,10 @@ class PostprocessRunner:
                 nlp=nlp,
                 tokenizer=tokenizer,
                 alignment_model=self.alignment_model,
-                generation_other_label=generation_other_label,
                 token_len_cache=token_len_cache,
             )
 
         raise ValueError(f"Unsupported output schema: {self.config.output_schema!r}")
-
-
-def _effective_generation_other_label(output_schema: str, configured_label: str | None) -> str:
-    if configured_label is not None:
-        return configured_label
-    if output_schema == "published_export":
-        return "other"
-    return "noise"
 
 
 def _alignment_model_for_model_name(model_name: str) -> str:
@@ -366,17 +318,12 @@ def _write_codebook(file_path: Path, *, codebook_name: str, codes: dict[str, str
 
 def _discover_sample_sources(sweep_root: Path, sample_idx: int) -> list[tuple[int, Path]]:
     sample_dirs = [
-        path
+        (idx, path)
         for path in sweep_root.iterdir()
-        if path.is_dir() and _parse_sample_idx(path.name) is not None
+        if path.is_dir() and (idx := _parse_sample_idx(path.name)) is not None
     ]
     if sample_dirs:
-        return [
-            (_parse_sample_idx(path.name), path)
-            for path in sorted(
-                sample_dirs, key=lambda path: (_parse_sample_idx(path.name), path.name)
-            )
-        ]
+        return sorted(sample_dirs, key=lambda item: (item[0], item[1].name))
 
     flat_sweep_files = _sort_sweep_files(sweep_root)
     if flat_sweep_files:
@@ -403,7 +350,6 @@ def _load_full_results_sample(
     nlp,
     tokenizer,
     alignment_model: str,
-    generation_other_label: str,
     token_len_cache: dict[str, int],
 ) -> dict[str, list[dict[str, Any]]]:
     sweep_files = _sort_sweep_files(sample_dir)
@@ -454,7 +400,7 @@ def _load_full_results_sample(
         target_pos_requested = int(payload.get("target_pos", 0))
         target_pos_resolved = target_pos_requested
         patch_results = payload.get("patch_result") or []
-        gold_num = _parse_number(payload.get("target_gold_answer"))
+        gold_num = parse_number(payload.get("target_gold_answer"))
 
         generated_texts = [str(item.get("generated_text", "")) for item in patch_results]
         generated_lengths = _count_token_lengths_batch(generated_texts, tokenizer, token_len_cache)
@@ -467,19 +413,7 @@ def _load_full_results_sample(
             strict=True,
         ):
             source_pos = int(item["pos"])
-            pred_num = _parse_number(generated_text)
-            is_numeric = pred_num is not None
-            is_correct = bool(
-                is_numeric
-                and gold_num is not None
-                and math.isclose(pred_num, gold_num, rel_tol=0.0, abs_tol=1e-9)
-            )
-            abs_error = (
-                abs(pred_num - gold_num) if (is_numeric and gold_num is not None) else float("nan")
-            )
-            signed_error = (
-                pred_num - gold_num if (is_numeric and gold_num is not None) else float("nan")
-            )
+            score = score_prediction(generated_text, gold_num)
             step_id, step_label = _step_for_source_pos(step_meta, sorted_step_positions, source_pos)
 
             output_rows.append(
@@ -492,16 +426,13 @@ def _load_full_results_sample(
                     "patched_token_str": token_map.get(source_pos, item.get("patching_token", "")),
                     "step_id": step_id,
                     "label": step_label,
-                    "generation_type": classify_generation_type(
-                        generated_text,
-                        other_label=generation_other_label,
-                    ),
+                    "generation_type": classify_generation_type(generated_text),
                     "generated_text": generated_text,
-                    "pred_num": pred_num,
-                    "is_numeric": is_numeric,
-                    "is_correct": is_correct,
-                    "abs_error": abs_error,
-                    "signed_error": signed_error,
+                    "pred_num": score.pred_num,
+                    "is_numeric": score.is_numeric,
+                    "is_correct": score.is_correct,
+                    "abs_error": score.abs_error,
+                    "signed_error": score.signed_error,
                     "generated_token_length": generated_len,
                     "average_generated_token_length": avg_generated_length,
                     "source_generated_token_length": source_generated_token_length,
@@ -525,7 +456,6 @@ def _load_published_export_sample(
     nlp,
     tokenizer,
     alignment_model: str,
-    generation_other_label: str,
     token_len_cache: dict[str, int],
 ) -> dict[str, list[dict[str, Any]]]:
     sweep_files = _sort_sweep_files(sample_dir)
@@ -547,9 +477,7 @@ def _load_published_export_sample(
     )
     canonical_reasoning = _extract_reasoning_from_eval_item(eval_item) or source_generated_answer
     requested_targets = {
-        int(SWEEP_FILE_RE.match(path.name).group(2))
-        for path in sweep_files
-        if SWEEP_FILE_RE.match(path.name)
+        key[1] for path in sweep_files if (key := _parse_sweep_file_name(path.name)) is not None
     }
     pe_metadata = _load_pe_sample_metadata(pe_dir, requested_targets)
     cot_text_hint = pe_metadata.cot_text_hint or source_generated_answer
@@ -587,7 +515,7 @@ def _load_published_export_sample(
         layer = int(payload.get("layer", 0))
         target_pos_requested = int(payload.get("target_pos", 0))
         patch_results = payload.get("patch_result") or []
-        gold_num = _parse_number(payload.get("target_gold_answer"))
+        gold_num = parse_number(payload.get("target_gold_answer"))
 
         generated_texts = [str(item.get("generated_text", "")) for item in patch_results]
         generated_lengths = _count_token_lengths_batch(generated_texts, tokenizer, token_len_cache)
@@ -601,19 +529,7 @@ def _load_published_export_sample(
             strict=True,
         ):
             source_pos = int(item["pos"])
-            pred_num = _parse_number(generated_text)
-            is_numeric = pred_num is not None
-            is_correct = bool(
-                is_numeric
-                and gold_num is not None
-                and math.isclose(pred_num, gold_num, rel_tol=0.0, abs_tol=1e-9)
-            )
-            abs_error = (
-                abs(pred_num - gold_num) if (is_numeric and gold_num is not None) else float("nan")
-            )
-            signed_error = (
-                pred_num - gold_num if (is_numeric and gold_num is not None) else float("nan")
-            )
+            score = score_prediction(generated_text, gold_num)
             req_to_resolved, resolved_positions = pe_metadata.source_target_meta.get(
                 source_pos, ({}, [])
             )
@@ -635,17 +551,14 @@ def _load_published_export_sample(
                         source_pos,
                         token_map.get(source_pos, item.get("patching_token", "")),
                     ),
-                    "generation_type": classify_generation_type(
-                        generated_text,
-                        other_label=generation_other_label,
-                    ),
+                    "generation_type": classify_generation_type(generated_text),
                     "pe": pe,
                     "generated_text": generated_text,
-                    "pred_num": pred_num,
-                    "is_numeric": is_numeric,
-                    "is_correct": is_correct,
-                    "abs_error": abs_error,
-                    "signed_error": signed_error,
+                    "pred_num": score.pred_num,
+                    "is_numeric": score.is_numeric,
+                    "is_correct": score.is_correct,
+                    "abs_error": score.abs_error,
+                    "signed_error": score.signed_error,
                     "generated_token_length": generated_len,
                     "source_generated_token_length": source_generated_token_length,
                     "entity_role": entity_role_map.get(source_pos, "OTHER"),
@@ -678,36 +591,37 @@ def _parse_sample_idx(name: str) -> int | None:
     return int(match.group(1))
 
 
+def _parse_sweep_file_name(name: str) -> tuple[int, int] | None:
+    """Return ``(layer, target_pos)`` for a ``layer_<L>_pos_<T>.json`` file name."""
+    match = SWEEP_FILE_RE.match(name)
+    if not match:
+        return None
+    return int(match.group(1)), int(match.group(2))
+
+
 def _sort_sweep_files(sample_dir: Path) -> list[Path]:
-    files = [
-        path for path in sample_dir.glob("layer_*_pos_*.json") if SWEEP_FILE_RE.match(path.name)
+    keyed = [
+        (key, path)
+        for path in sample_dir.glob("layer_*_pos_*.json")
+        if (key := _parse_sweep_file_name(path.name)) is not None
     ]
-    return sorted(
-        files,
-        key=lambda path: (
-            int(SWEEP_FILE_RE.match(path.name).group(1)),
-            int(SWEEP_FILE_RE.match(path.name).group(2)),
-        ),
-    )
+    return [path for _key, path in sorted(keyed, key=lambda item: item[0])]
 
 
 def _sort_source_pe_files(pe_dir: Path) -> list[Path]:
-    files = [
-        path
+    keyed = [
+        (int(match.group(1)), path)
         for path in pe_dir.glob("source_*.json")
-        if re.search(r"source_(\d+)\.json$", path.name)
+        if (match := SOURCE_PE_FILE_RE.match(path.name)) is not None
     ]
-    return sorted(
-        files, key=lambda path: int(re.search(r"source_(\d+)\.json$", path.name).group(1))
-    )
+    return [path for _key, path in sorted(keyed, key=lambda item: item[0])]
 
 
 def _choose_canonical_sweep_file(files: list[Path]) -> Path | None:
     if not files:
         return None
     for path in files:
-        match = SWEEP_FILE_RE.match(path.name)
-        if match and int(match.group(1)) == 1 and int(match.group(2)) == -1:
+        if _parse_sweep_file_name(path.name) == (1, -1):
             return path
     return files[0]
 
@@ -738,10 +652,14 @@ def _resolve_target_position(
 
 
 def _maybe_float(value: object) -> float:
-    try:
+    if isinstance(value, (int, float)):
         return float(value)
-    except Exception:
-        return float("nan")
+    if isinstance(value, str):
+        try:
+            return float(value)
+        except ValueError:
+            return float("nan")
+    return float("nan")
 
 
 def _load_pe_sample_metadata(pe_dir: Path, requested_targets: set[int]) -> PESampleMetadata:
@@ -880,7 +798,6 @@ def _classify_lines_setup_step_final(text: str) -> list[str]:
 
     first_idx = nonempty_idx[0]
     labels[first_idx] = "Setup"
-    _ = bool(SETUP_HINT_RE.search(raw_lines[first_idx].strip()))
 
     if len(nonempty_idx) == 1:
         if _looks_final_answer_line(raw_lines[first_idx]):
@@ -1055,28 +972,6 @@ def _step_for_source_pos(
     return step_meta[fallback]
 
 
-def _assign_labels_from_spans(
-    token_char_spans: list[tuple[int, int, int]],
-    spans: Sequence[LabeledSpan],
-) -> list[str]:
-    labels: list[str] = []
-    for _pos, start, end in token_char_spans:
-        if start == end:
-            labels.append("OTHER")
-            continue
-
-        best_label = "OTHER"
-        best_priority = PRIORITY[best_label]
-        for span in spans:
-            if max(start, span.start) < min(end, span.end):
-                priority = PRIORITY[span.label]
-                if priority > best_priority:
-                    best_label = span.label
-                    best_priority = priority
-        labels.append(best_label)
-    return labels
-
-
 def _assign_labels_from_offsets(
     offsets: Sequence[tuple[int, int]],
     spans: Sequence[LabeledSpan],
@@ -1171,7 +1066,7 @@ def _build_qwen_entity_role_map(token_map: dict[int, str], *, question: str, nlp
         reasoning=reasoning,
         nlp=nlp,
     )
-    labels = _assign_labels_from_spans(token_spans, spans)
+    labels = _assign_labels_from_offsets([(start, end) for _pos, start, end in token_spans], spans)
 
     out: dict[int, str] = {}
     for (pos, _start, _end), label in zip(token_spans, labels, strict=True):
@@ -1220,21 +1115,8 @@ def _build_llama_entity_role_map(
     return out
 
 
-def _parse_number(text: object) -> float | None:
-    if text is None:
-        return None
-    matches = NUM_RE.findall(str(text))
-    if not matches:
-        return None
-    raw = matches[-1].replace(",", "")
-    try:
-        return float(raw)
-    except ValueError:
-        return None
-
-
 def _count_token_lengths_batch(
-    texts: list[object],
+    texts: Sequence[object],
     tokenizer,
     cache: dict[str, int],
 ) -> list[int]:

@@ -1,6 +1,7 @@
 name: patch
 batch_size: 1
 max_gen_len: 400
+source_max_gen_len: null
 source_layer: -1
 target_layer: -1
 hs_selection: -1
@@ -9,4 +10,8 @@ patch_from_generation: true
 patch_position: null
 gen_cache_dir: null
 extraction_mode: flexible
+# Appendix C control for a single run: cosine similarity of the patched state to the original
+# (null = unmodified) and the RNG seed for the random direction (null = root seed).
+perturb_cosine: null
+perturb_seed: null
 output_file: output_patched.json

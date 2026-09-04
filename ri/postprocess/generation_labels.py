@@ -2,44 +2,35 @@ from __future__ import annotations
 
 import re
 
-BASE_GENERATION_ORDER = [
-    "full_cot",
-    "semi_cot",
-    "partial_cot",
-    "final_only",
-    "text_only",
-    "none",
-]
+# Post-patch generation types, named after the output-type taxonomy in the paper (Table 6).
+FULL_COT = "full_cot"
+EQUATION_ONLY = "equation_only"
+PARTIAL_COT = "partial_cot"
+FINAL_ONLY = "final_only"
+TEXT_ONLY = "text_only"
+NOISE = "noise"
+NONE = "none"
+
+GENERATION_TYPES = [FULL_COT, EQUATION_ONLY, PARTIAL_COT, FINAL_ONLY, TEXT_ONLY, NOISE, NONE]
+
+GENERATION_TYPE_CODES: dict[str, str] = {
+    FULL_COT: "Full CoT: complete multi-step natural-language reasoning.",
+    EQUATION_ONLY: "Equation-Only: predominantly symbolic or arithmetic expressions with minimal prose.",
+    PARTIAL_COT: "Partial CoT: abbreviated one-step reasoning.",
+    FINAL_ONLY: "Final Only: direct answer, typically a single number and a few words.",
+    TEXT_ONLY: "Text Only: non-answer prose without a valid final numeric answer.",
+    NOISE: "Noise: symbol-like fragments or token repetition with no usable answer.",
+    NONE: "None: empty generation.",
+}
 
 NUM_RE = re.compile(r"-?\d[\d,]*(?:\.\d+)?")
 WORD_RE = re.compile(r"[A-Za-z]+")
 STEP_MARKER_RE = re.compile(r"(?im)^\s*(?:step\s*\d+|\d+\.)")
 ANSWER_PREFIX_RE = re.compile(r"(?is)^\s*(?:final\s+answer|answer)\s*[:\-]?\s*")
-ANSWER_PHRASE_RE = re.compile(
-    r"(?i)\b(final\s+answer|answer\s+is|correct\s+answer|final\s+result)\b"
-)
 REPEATED_SYMBOL_RE = re.compile(r"([\"'`.\-_])\1{9,}")
 LEADING_PUNCT = set(":;,.()[]{}$")
 NUMERIC_TOKEN_RE = re.compile(r"^[+-]?\d+(?:\.\d+)?$")
 WORD_CHAR_RE = re.compile(r"[A-Za-z]")
-
-
-def generation_order(other_label: str = "noise") -> list[str]:
-    return [*BASE_GENERATION_ORDER, other_label]
-
-
-def generation_type_codes(other_label: str = "noise") -> dict[str, str]:
-    return {
-        "full_cot": "A multi-step chain-of-thought reasoning trace.",
-        "semi_cot": "A concise equation-focused reasoning trace.",
-        "partial_cot": "A partial or incomplete reasoning trace with mixed text and numbers.",
-        "final_only": "A short final-answer style response without a clear reasoning trace.",
-        "text_only": "Natural-language text with no numeric answer content.",
-        "none": "No usable generation text was produced.",
-        other_label: "Residual malformed output."
-        if other_label == "other"
-        else "Residual malformed output relabeled as noise.",
-    }
 
 
 def _is_repetitive_or_empty(text: str) -> bool:
@@ -121,33 +112,33 @@ def _normalize_generated_text(text: str) -> str:
     return stripped.strip()
 
 
-def _relabel_other(text: str, other_label: str) -> str:
+def _relabel_noise(text: str) -> str:
+    """A bare number hidden behind punctuation is a final answer, not noise."""
     normalized = _normalize_generated_text(text)
     if (
         normalized
         and not WORD_CHAR_RE.search(normalized)
         and NUMERIC_TOKEN_RE.fullmatch(normalized)
     ):
-        return "final_only"
-    return other_label
+        return FINAL_ONLY
+    return NOISE
 
 
-def classify_generation_type(text: object, other_label: str = "noise") -> str:
+def classify_generation_type(text: object) -> str:
+    """Assign one of ``GENERATION_TYPES`` to a post-patch generation."""
     stripped = "" if text is None else str(text).strip()
     if not stripped:
-        return "none"
-
-    label = other_label
+        return NONE
 
     if _is_strict_final_answer(stripped):
-        return "final_only"
+        return FINAL_ONLY
 
     has_number = bool(NUM_RE.search(stripped))
     has_alpha = bool(re.search(r"[A-Za-z]", stripped))
     if has_alpha and not has_number:
-        return "text_only"
+        return TEXT_ONLY
     if _is_repetitive_or_empty(stripped):
-        return _relabel_other(stripped, other_label)
+        return _relabel_noise(stripped)
 
     word_count = len(WORD_RE.findall(stripped))
     line_count = stripped.count("\n") + 1
@@ -155,6 +146,7 @@ def classify_generation_type(text: object, other_label: str = "noise") -> str:
     has_step_marker = bool(STEP_MARKER_RE.search(stripped))
     has_ops = bool(re.search(r"[+\-*/xX\u00d7]", stripped))
 
+    label = NOISE
     if has_number:
         if (
             has_step_marker
@@ -162,35 +154,28 @@ def classify_generation_type(text: object, other_label: str = "noise") -> str:
             or word_count >= 24
             or (eq_like >= 2 and word_count >= 12 and line_count >= 2)
         ):
-            label = "full_cot"
+            label = FULL_COT
         elif (
             (eq_like >= 1 and has_ops and word_count <= 14 and line_count >= 2)
             or (eq_like >= 1 and has_ops and line_count == 1 and word_count <= 6)
             or (eq_like >= 2 and has_ops and word_count <= 20)
         ):
-            label = "semi_cot"
+            label = EQUATION_ONLY
 
     num_count = len(NUM_RE.findall(stripped))
     if (
-        label == other_label
+        label == NOISE
         and has_alpha
         and num_count == 1
         and word_count < 10
         and eq_like == 0
         and not has_ops
     ):
-        label = "final_only"
+        label = FINAL_ONLY
 
-    if label == other_label and has_number and has_alpha:
-        label = "partial_cot"
-        if ANSWER_PHRASE_RE.search(stripped):
-            return label
-        if eq_like >= 1 and has_ops:
-            return label
-        if eq_like >= 1 or has_ops:
-            return label
-        return label
+    if label == NOISE and has_number and has_alpha:
+        return PARTIAL_COT
 
-    if label == other_label:
-        return _relabel_other(stripped, other_label)
+    if label == NOISE:
+        return _relabel_noise(stripped)
     return label

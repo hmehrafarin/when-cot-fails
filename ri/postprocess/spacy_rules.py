@@ -2,18 +2,19 @@ from __future__ import annotations
 
 import re
 from collections import defaultdict
-from collections.abc import Sequence
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from functools import lru_cache
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from spacy.language import Language
+    from spacy.tokens import Doc
 
 try:
     import spacy
-    from spacy.language import Language
-    from spacy.tokens import Doc
-except ImportError:
-    spacy = None
-    Language = object
-    Doc = object
+except ImportError:  # spaCy is only needed for postprocessing (`uv sync --extra analysis`)
+    spacy = None  # type: ignore[assignment]
 
 PRIORITY = {
     "OTHER": 0,
@@ -167,8 +168,8 @@ def _require_spacy() -> None:
 @lru_cache(maxsize=4)
 def get_nlp(model_name: str = "en_core_web_sm") -> Language:
     _require_spacy()
-    nlp = spacy.load(model_name)
-    infixes = list(nlp.Defaults.infixes)
+    nlp: Any = spacy.load(model_name)
+    infixes = list(nlp.Defaults.infixes or [])
     digit_fraction = r"(?<=[0-9])/(?=[0-9])"
     if digit_fraction not in infixes:
         infixes.append(digit_fraction)
@@ -442,8 +443,8 @@ def _extract_entities(doc: Doc) -> tuple[frozenset[str], frozenset[str]]:
 def _seed_context(
     doc: Doc,
     set_tag,
-    entity_lemmas: Sequence[str],
-    entity_texts: Sequence[str],
+    entity_lemmas: Iterable[str],
+    entity_texts: Iterable[str],
 ) -> None:
     entity_lemma_set = set(entity_lemmas)
     entity_text_set = set(entity_texts)

@@ -32,22 +32,19 @@ class ModelAndTokenizer:
             )
         if model is None:
             assert model_name is not None
-            kwargs = dict(
-                cache_dir=cache_dir,
-            )
             model = transformers.AutoModelForCausalLM.from_pretrained(
                 model_name,
+                cache_dir=cache_dir,
                 low_cpu_mem_usage=low_cpu_mem_usage,
                 device_map="auto",
                 dtype=torch_dtype,
-                **kwargs,
             )
             set_requires_grad(require_grad, model)
             model.eval()
 
-        self.tokenizer = tokenizer
+        self.tokenizer: Any = tokenizer
         _strip_llama_default_metadata(self.tokenizer)
-        self.model = model
+        self.model: Any = model
         self.device_map = getattr(model, "hf_device_map", None)
         self.device = device
         self.model_name = self._derive_model_name(model_name, model)

@@ -1,0 +1,32 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.venv/
+.venv*/
+
+# Tool caches
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+
+# Editors / agents
+.vscode/
+.idea/
+.claude/
+.DS_Store
+
+# Hydra run directories (hydra.run.dir / hydra.sweep.dir defaults)
+outputs/
+multirun/
+
+# Experiment outputs (defaults in ri/conf/task/*.yaml and $PROJECTDIR/patch_logits)
+pe_output/
+patch_pos_sweep_results/
+patch_logits/
+job_outputs/
+
+# Tracking
+wandb/

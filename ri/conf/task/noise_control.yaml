@@ -1,0 +1,13 @@
+name: noise_control
+results_csv: outputs/full_results.csv
+output_dir: noise_control_output
+n_examples: 100
+sample_indices: null
+alphas: [1.0, 0.75, 0.5, 0.25, 0.0]
+target_pos: null
+max_gen_len: 400
+source_max_gen_len: null
+gen_cache_dir: null
+extraction_mode: flexible
+resume: false
+summarize_only: false

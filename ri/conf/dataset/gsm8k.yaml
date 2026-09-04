@@ -1,6 +1,5 @@
-dataset: gsm8k
+name: gsm8k
 source_dataset: gsm8k
 target_dataset: gsm8k
 src_prompt_template: gsm8k_cot
 tgt_prompt_template: gsm8k_non_cot
-prompt_template: gsm8k_cot

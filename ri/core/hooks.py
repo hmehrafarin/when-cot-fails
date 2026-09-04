@@ -2,14 +2,15 @@ from typing import Any
 
 import torch
 
-from .model import ModelAndTokenizer
-
 
 def set_patch(
-    model: ModelAndTokenizer,
+    model: Any,
     patch_config: list[dict[str, Any]],
 ) -> list[Any]:
-    """Register forward hooks on model layers to replace hidden states at given positions."""
+    """Register forward hooks that replace hidden states at given positions.
+
+    ``model`` is the Hugging Face causal LM; hooks attach to ``model.model.layers[i]``.
+    """
 
     def _make_hook(
         hs_position: list[dict[str, int] | int],

@@ -11,6 +11,12 @@ class PatchConfig(BaseModel):
     """Configuration for hidden state patching experiments."""
 
     max_gen_len: int = Field(gt=0)
+    # Optional separate budget for the source CoT generation; defaults to max_gen_len.
+    source_max_gen_len: int | None = Field(default=None, gt=0)
+    # Appendix C direction-noise control. When set, the patched source state is replaced by a
+    # norm-matched vector at this cosine similarity to the original; None patches it unchanged.
+    perturb_cosine: float | None = Field(default=None, ge=0.0, le=1.0)
+    perturb_seed: int = 0
     source_layer: int
     target_layer: int
     patch_position: int | None = None

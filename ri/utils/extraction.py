@@ -1,4 +1,6 @@
+import math
 import re
+from dataclasses import dataclass
 from typing import Any
 
 from .tokenizer import find_special_token, get_end_header_token, get_eot_token
@@ -293,3 +295,28 @@ def extract_answer_from_generation(
         answers["answer_num"].append(matched_number if matched_number else None)
 
     return answers
+
+
+@dataclass(frozen=True, slots=True)
+class PredictionScore:
+    """Exact-match score of a generation against a gold number (Appendix A.2)."""
+
+    pred_num: float | None
+    is_numeric: bool
+    is_correct: bool
+    abs_error: float
+    signed_error: float
+
+
+def score_prediction(generated_text: object, gold_num: float | None) -> PredictionScore:
+    """Score the last number in ``generated_text`` against ``gold_num`` by exact match."""
+    pred_num = parse_number(generated_text)
+    if pred_num is None or gold_num is None:
+        return PredictionScore(pred_num, pred_num is not None, False, float("nan"), float("nan"))
+    return PredictionScore(
+        pred_num=pred_num,
+        is_numeric=True,
+        is_correct=math.isclose(pred_num, gold_num, rel_tol=0.0, abs_tol=1e-9),
+        abs_error=abs(pred_num - gold_num),
+        signed_error=pred_num - gold_num,
+    )

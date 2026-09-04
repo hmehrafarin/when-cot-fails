@@ -202,7 +202,9 @@ def get_source_hidden_state_at_position(
     seq_len = all_source_hs.size(1)
     safe_pos = min(hs_pos, seq_len - 1) if hs_pos >= 0 else max(0, seq_len + hs_pos)
     hs_at_pos = all_source_hs[:, safe_pos : safe_pos + 1, :]
-    token_text = _safe_token_from_id(tokenizer, tokenized_source["input_ids"][0, safe_pos].item())
+    token_text = _safe_token_from_id(
+        tokenizer, int(tokenized_source["input_ids"][0, safe_pos].item())
+    )
     return hs_at_pos, safe_pos, token_text
 
 
@@ -268,7 +270,7 @@ def get_all_hidden_states_from_generation(
         cache_path = os.path.join(gen_cache_dir, f"gen_cache_{cache_hash}.pt")
         if os.path.exists(cache_path):
             try:
-                cached_data = torch.load(cache_path, map_location=model.device)
+                cached_data = torch.load(cache_path, map_location=model.device, weights_only=True)
             except Exception as e:
                 print(f"Warning: Failed to load cache {cache_path}: {e}")
 
@@ -393,8 +395,8 @@ def analyze_patch_positions(
                 tokenized_source,
                 source_prompt_texts,
                 cfg.source_layer,
-                cfg.max_gen_len,
-                gen_cache_dir=getattr(cfg, "gen_cache_dir", None),
+                cfg.source_max_gen_len or cfg.max_gen_len,
+                gen_cache_dir=cfg.gen_cache_dir,
                 tgt_template_name=getattr(tgt_prompter, "template_name", None),
                 batch_size=batch_size,
                 extraction_mode=cfg.extraction_mode,

@@ -6,7 +6,6 @@ output_file: outputs/full_results.csv
 output_schema: full_results
 sample_idx: 0
 spacy_model: en_core_web_sm
-generation_other_label: null
 progress_every: 25
 source_tokens_file: null
 entity_codes_file: null

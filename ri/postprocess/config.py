@@ -12,7 +12,6 @@ class PostprocessConfig(BaseModel):
     eval_json: str | None = None
     sample_idx: int = 0
     spacy_model: str = Field(default="en_core_web_sm", min_length=1)
-    generation_other_label: str | None = None
     progress_every: int = Field(default=25, ge=0)
     source_tokens_file: str | None = None
     entity_codes_file: str | None = None
@@ -48,16 +47,6 @@ class PostprocessConfig(BaseModel):
             return None
         text = str(value).strip()
         return text or None
-
-    @field_validator("generation_other_label", mode="before")
-    @classmethod
-    def _validate_generation_other_label(cls, value: object) -> str | None:
-        if value is None:
-            return None
-        text = str(value).strip().lower()
-        if text not in {"other", "noise"}:
-            raise ValueError("generation_other_label must be either 'other' or 'noise'")
-        return text
 
     @model_validator(mode="after")
     def _validate_schema_dependencies(self) -> PostprocessConfig:

@@ -1,8 +1,10 @@
 from .extraction import (
+    PredictionScore,
     extract_answer,
     extract_answer_from_generation,
     extract_final_answer,
     parse_number,
+    score_prediction,
 )
 from .text import prompt_text_from_rendered
 from .tokenizer import (
@@ -17,6 +19,7 @@ from .tokenizer import (
 )
 
 __all__ = [
+    "PredictionScore",
     "decode_tokens",
     # Extraction utilities
     "extract_answer",
@@ -32,4 +35,5 @@ __all__ = [
     # Text utilities
     "prompt_text_from_rendered",
     "render_prompts",
+    "score_prediction",
 ]

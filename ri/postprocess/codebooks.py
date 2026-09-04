@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from .generation_labels import generation_type_codes
+from .generation_labels import GENERATION_TYPE_CODES
 from .spacy_rules import PRIORITY
 
 ENTITY_ROLE_CODES: dict[str, str] = {
@@ -20,4 +20,4 @@ ENTITY_ROLE_CODES: dict[str, str] = {
 
 ENTITY_ROLE_PRIORITY: dict[str, int] = PRIORITY
 
-GENERATION_TYPE_CODES: dict[str, str] = generation_type_codes()
+__all__ = ["ENTITY_ROLE_CODES", "ENTITY_ROLE_PRIORITY", "GENERATION_TYPE_CODES"]

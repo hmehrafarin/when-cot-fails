@@ -24,12 +24,12 @@ jobs:
     runs-on: ubuntu-24.04-arm
     steps:
       - uses: actions/checkout@v7
-      - uses: astral-sh/setup-uv@v9
+      - uses: astral-sh/setup-uv@v10.1.0
         with:
           enable-cache: true
           python-version: "3.11"
-      - name: Install project
-        run: uv sync --locked
+      - name: Install project with all extras so mypy sees every optional dependency
+        run: uv sync --locked --all-extras
       - uses: actions/cache@v4
         with:
           path: ~/.cache/pre-commit
@@ -46,7 +46,7 @@ jobs:
         os: [ubuntu-24.04-arm, macos-latest]
     steps:
       - uses: actions/checkout@v7
-      - uses: astral-sh/setup-uv@v9
+      - uses: astral-sh/setup-uv@v10.1.0
         with:
           enable-cache: true
           python-version: "3.11"

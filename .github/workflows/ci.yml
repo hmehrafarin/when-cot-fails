@@ -1,0 +1,56 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+# arm64 runners on purpose. On linux/x86_64 the lock resolves torch to the
+# CUDA build (pyproject.toml pins it to the cu121 index there), which is
+# several GB of wheels that CI cannot use. On arm64 that marker does not match
+# and `uv sync --locked` installs the ~90 MB CPU build from PyPI, which is all
+# the checks and tests need.
+jobs:
+  lint:
+    name: Lint & type-check
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v9
+        with:
+          enable-cache: true
+          python-version: "3.11"
+      - name: Install project
+        run: uv sync --locked
+      - uses: actions/cache@v4
+        with:
+          path: ~/.cache/pre-commit
+          key: pre-commit-${{ runner.os }}-${{ hashFiles('.pre-commit-config.yaml') }}
+      - name: Run pre-commit hooks
+        run: uv run pre-commit run --all-files --show-diff-on-failure
+
+  test:
+    name: Tests (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04-arm, macos-latest]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v9
+        with:
+          enable-cache: true
+          python-version: "3.11"
+      - name: Install project
+        run: uv sync --locked
+      - name: Run tests
+        run: uv run pytest -q

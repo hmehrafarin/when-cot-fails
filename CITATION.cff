@@ -1,0 +1,30 @@
+cff-version: 1.2.0
+message: "If you use this code, please cite the paper below."
+title: "When Chain-of-Thought Fails, the Solution Hides in the Hidden States"
+type: software
+authors:
+  - family-names: Mehrafarin
+    given-names: Houman
+version: 0.2.0
+license: MIT
+repository-code: "https://github.com/hmehrafarin/when-cot-fails"
+url: "https://arxiv.org/abs/2604.23351"
+keywords:
+  - mechanistic-interpretability
+  - activation-patching
+  - chain-of-thought
+  - large-language-models
+preferred-citation:
+  type: article
+  title: "When Chain-of-Thought Fails, the Solution Hides in the Hidden States"
+  authors:
+    - family-names: Mehrafarin
+      given-names: Houman
+    - family-names: Parekh
+      given-names: Amit
+    - family-names: Konstas
+      given-names: Ioannis
+  year: 2026
+  journal: arXiv
+  doi: 10.48550/arXiv.2604.23351
+  url: "https://arxiv.org/abs/2604.23351"

@@ -1,6 +1,11 @@
 # When Chain-of-Thought Fails, the Solution Hides in the Hidden States
 
-Code for the paper *When Chain-of-Thought Fails, the Solution Hides in the Hidden States*. It implements
+[![arXiv](https://img.shields.io/badge/arXiv-2604.23351-b31b1b.svg)](https://arxiv.org/abs/2604.23351)
+[![CI](https://github.com/hmehrafarin/when-cot-fails/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/hmehrafarin/when-cot-fails/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue.svg)](pyproject.toml)
+
+Code for the paper [*When Chain-of-Thought Fails, the Solution Hides in the Hidden States*](https://arxiv.org/abs/2604.23351). It implements
 activation patching to ask whether the hidden states of generated chain-of-thought (CoT) tokens contain
 task-solving information, and where in the trace that information sits.
 
@@ -407,10 +412,11 @@ runner. Follow `ri/patching/config.py` if you want Pydantic validation of the ta
 
 ## Development
 
-`uv sync` installs the dev group (ruff, mypy, codespell, deptry, pre-commit). Install the hooks with
-`uv run pre-commit install`; they run ruff, ruff-format, codespell, mypy and deptry inside the project
-environment. The checks in `tests/` run under pytest (`uv add --dev pytest` once, then `uv run pytest`) or
-directly with `uv run python tests/test_noise_control.py`.
+`uv sync` installs the dev group (ruff, mypy, codespell, deptry, pre-commit, pytest). Install the hooks
+with `uv run pre-commit install`; they run ruff, ruff-format, codespell, mypy and deptry inside the project
+environment. Run the tests with `uv run pytest`, or a single file directly with
+`uv run python tests/test_noise_control.py`. CI ([`.github/workflows/ci.yml`](.github/workflows/ci.yml))
+runs the same hooks and the tests on every push to `main` and every pull request.
 
 ## License
 
@@ -420,12 +426,12 @@ Released under the MIT License. See [LICENSE](LICENSE).
 
 ```bibtex
 @misc{mehrafarin2026chainofthoughtfailssolutionhides,
-      title={When Chain-of-Thought Fails, the Solution Hides in the Hidden States}, 
+      title={When Chain-of-Thought Fails, the Solution Hides in the Hidden States},
       author={Houman Mehrafarin and Amit Parekh and Ioannis Konstas},
       year={2026},
       eprint={2604.23351},
       archivePrefix={arXiv},
       primaryClass={cs.CL},
-      url={https://arxiv.org/abs/2604.23351}, 
+      url={https://arxiv.org/abs/2604.23351},
 }
 ```

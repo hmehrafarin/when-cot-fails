@@ -37,3 +37,19 @@ def test_classify_generation_type(text: str | None, label: str) -> None:
 
 def test_codebook_matches_types() -> None:
     assert list(GENERATION_TYPE_CODES) == GENERATION_TYPES
+
+
+PUBLISHED_MISLABELS = [
+    ("2.5", FINAL_ONLY),
+    ("18.", FINAL_ONLY),
+    ("3 extra boxes", FINAL_ONLY),
+]
+
+
+@pytest.mark.xfail(
+    strict=True,
+    reason="as published: a leading decimal or 'N.' reads as a step marker, an x inside a word as an operator",
+)
+@pytest.mark.parametrize(("text", "label"), PUBLISHED_MISLABELS)
+def test_published_mislabels(text: str, label: str) -> None:
+    assert classify_generation_type(text) == label

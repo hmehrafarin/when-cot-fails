@@ -5,7 +5,8 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue.svg)](pyproject.toml)
 
-Code for the paper [*When Chain-of-Thought Fails, the Solution Hides in the Hidden States*](https://arxiv.org/abs/2604.23351). It implements
+Code for the paper [*When Chain-of-Thought Fails, the Solution Hides in the Hidden States*](https://arxiv.org/abs/2604.23351),
+accepted to appear in *Findings of EMNLP 2026*. It implements
 activation patching to ask whether the hidden states of generated chain-of-thought (CoT) tokens contain
 task-solving information, and where in the trace that information sits.
 

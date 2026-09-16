@@ -1,10 +1,5 @@
 # When Chain-of-Thought Fails, the Solution Hides in the Hidden States
 
-[![arXiv](https://img.shields.io/badge/arXiv-2604.23351-b31b1b.svg)](https://arxiv.org/abs/2604.23351)
-[![CI](https://github.com/hmehrafarin/when-cot-fails/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/hmehrafarin/when-cot-fails/actions/workflows/ci.yml)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue.svg)](pyproject.toml)
-
 Code for the paper [*When Chain-of-Thought Fails, the Solution Hides in the Hidden States*](https://arxiv.org/abs/2604.23351),
 accepted to appear in *Findings of EMNLP 2026*. It implements
 activation patching to ask whether the hidden states of generated chain-of-thought (CoT) tokens contain
